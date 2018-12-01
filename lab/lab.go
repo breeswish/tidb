@@ -21,6 +21,8 @@ const (
 	Event_Svr_Stop = 2
 	Event_Coproc = 3
 	Event_Get = 4
+	Event_Commit = 5
+
 	Fuck_Prefix = "_fuck_prefix"
 )
 
@@ -117,6 +119,7 @@ func TestUserQuery(ctx context.Context, msg string) bool {
 
 type ReqData struct {
 	RegionId uint64 `json:"region_id"`
+	StoreId  uint64 `json:"store_id"`
 }
 
 func AddEvent(eid int, data interface{}) {
@@ -171,6 +174,16 @@ func AddEvent(eid int, data interface{}) {
 				TS:        time.Now().UnixNano(),
 				EvId:      eid,
 				EventName: "TiDBGet",
+				Payload:   reqData,
+			}
+		}
+	case Event_Commit:
+		reqData, ok := data.(*ReqData)
+		if ok {
+			event <- Event {
+				TS:        time.Now().UnixNano(),
+				EvId:      eid,
+				EventName: "TiDBCommit",
 				Payload:   reqData,
 			}
 		}

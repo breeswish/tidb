@@ -15,6 +15,7 @@ package tikv
 
 import (
 	"bytes"
+	"github.com/pingcap/tidb/lab"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -29,7 +30,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx/binloginfo"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
 	"github.com/pingcap/tidb/tablecodec"
-	binlog "github.com/pingcap/tipb/go-binlog"
+	"github.com/pingcap/tipb/go-binlog"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 )
@@ -81,10 +82,11 @@ type twoPhaseCommitter struct {
 	// We use it to guarantee GC worker will not influence any active txn. The value
 	// should be less than GC life time.
 	maxTxnTimeUse uint64
+	Print 		  bool
 }
 
 // newTwoPhaseCommitter creates a twoPhaseCommitter.
-func newTwoPhaseCommitter(txn *tikvTxn, connID uint64) (*twoPhaseCommitter, error) {
+func newTwoPhaseCommitter(txn *tikvTxn, connID uint64, print bool) (*twoPhaseCommitter, error) {
 	var (
 		keys    [][]byte
 		size    int
@@ -161,6 +163,7 @@ func newTwoPhaseCommitter(txn *tikvTxn, connID uint64) (*twoPhaseCommitter, erro
 		syncLog:       getTxnSyncLog(txn),
 		connID:        connID,
 		maxTxnTimeUse: maxTxnTimeUse,
+		Print:         print,
 	}, nil
 }
 
@@ -443,6 +446,14 @@ func (c *twoPhaseCommitter) commitSingleBatch(bo *Backoffer, batch batchKeys) er
 	req.Context.Priority = c.priority
 
 	sender := NewRegionRequestSender(c.store.regionCache, c.store.client)
+
+	if c.Print {
+		sender.regionCache.mu.RLock()
+		r := sender.regionCache.getCachedRegion(batch.region)
+		sender.regionCache.mu.RUnlock()
+		lab.AddEvent(lab.Event_Commit, &lab.ReqData{RegionId: r.GetID(), StoreId: r.peer.StoreId})
+	}
+
 	resp, err := sender.SendReq(bo, req, batch.region, readTimeoutShort)
 
 	// If we fail to receive response for the request that commits primary key, it will be undetermined whether this

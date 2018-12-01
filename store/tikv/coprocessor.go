@@ -122,6 +122,7 @@ type copTask struct {
 	respChan  chan *copResponse
 	storeAddr string
 	cmdType   tikvrpc.CmdType
+	print     bool
 }
 
 func (r *copTask) String() string {
@@ -266,11 +267,8 @@ func buildCopTasks_(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc b
 				ranges:   ranges.slice(i, nextI),
 				respChan: make(chan *copResponse, 1),
 				cmdType:  cmdType,
+				print:    print,
 			})
-			fmt.Printf("!!!!!!!print   %v\n", print)
-			if print {
-				lab.AddEvent(lab.Event_Coproc, &lab.ReqData{RegionId: region.id})
-			}
 			i = nextI
 		}
 	}
@@ -627,6 +625,12 @@ func (worker *copIteratorWorker) handleTaskOnce(bo *Backoffer, task *copTask, ch
 		},
 	}
 	startTime := time.Now()
+	if task.print {
+		sender.regionCache.mu.RLock()
+		r := sender.regionCache.getCachedRegion(task.region)
+		sender.regionCache.mu.RUnlock()
+		lab.AddEvent(lab.Event_Coproc, &lab.ReqData{RegionId: r.GetID(), StoreId: r.peer.StoreId})
+	}
 	resp, err := sender.SendReq(bo, req, task.region, ReadTimeoutMedium)
 	if err != nil {
 		return nil, errors.Trace(err)

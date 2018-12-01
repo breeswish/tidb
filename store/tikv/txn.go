@@ -15,6 +15,7 @@ package tikv
 
 import (
 	"fmt"
+	"github.com/pingcap/tidb/lab"
 	"sync"
 	"time"
 
@@ -180,7 +181,7 @@ func (txn *tikvTxn) Commit(ctx context.Context) error {
 	if val != nil {
 		connID = val.(uint64)
 	}
-	committer, err := newTwoPhaseCommitter(txn, connID)
+	committer, err := newTwoPhaseCommitter(txn, connID, lab.TestUserQuery(ctx, "2PC"))
 	if err != nil || committer == nil {
 		return errors.Trace(err)
 	}
