@@ -16,6 +16,9 @@ package tikv
 import (
 	"bytes"
 	"fmt"
+	//"github.com/pingcap/tidb/lab"
+
+	//"github.com/pingcap/tidb/lab"
 	"io"
 	"sort"
 	"strings"
@@ -81,6 +84,7 @@ func (c *CopClient) supportExpr(exprType tipb.ExprType) bool {
 
 // Send builds the request and gets the coprocessor iterator response.
 func (c *CopClient) Send(ctx context.Context, req *kv.Request, vars *kv.Variables) kv.Response {
+	// lab.TestUserQuery(ctx, "send")
 	ctx = context.WithValue(ctx, txnStartKey, req.StartTs)
 	bo := NewBackoffer(ctx, copBuildTaskMaxBackoff).WithVars(vars)
 	tasks, err := buildCopTasks(bo, c.store.regionCache, &copRanges{mid: req.KeyRanges}, req.Desc, req.Streaming)

@@ -6,16 +6,15 @@ import (
 	"fmt"
 	"github.com/pingcap/tidb/planner/core"
 	"golang.org/x/net/context"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
-	"net/http"
 )
 
 
 const (
 	LabEvent_Key = "labEvent_Key"
+	LabEvent_UserQuery = "LabEvent_UserQuery"
 	Event_Svr_Start = 0
 	Event_SQL = 1
 	Event_Svr_Stop = 2
@@ -69,6 +68,7 @@ func pushEvent(e Event) {
 	if _, err = f.WriteString(string(data)); err != nil {
 		panic(err)
 	}
+	/*
 	resp, err := http.Post("http://192.168.198.207:12510/event", "application/json", bytes.NewBuffer(data))
 	defer resp.Body.Close()
 	if err != nil {
@@ -77,6 +77,8 @@ func pushEvent(e Event) {
 		data, _ = ioutil.ReadAll(resp.Body)
 		f.WriteString(string(data) + "\n")
 	}
+	*/
+	f.WriteString(string(data) + "\n")
 }
 
 func validEvent(e Event) bool {
@@ -94,6 +96,18 @@ func validEvent(e Event) bool {
 		}
 	}
 	return true
+}
+
+func TestUserQuery(ctx context.Context, msg string) bool {
+	ret := false
+	userQuery, ok := ctx.Value(LabEvent_UserQuery).(bool)
+	if ok && userQuery {
+		fmt.Println("!!!!!! USERQUERYYY  " + msg)
+		ret = true
+	} else {
+		fmt.Println("!!!!!! NOT " + msg)
+	}
+	return ret
 }
 
 func AddEvent(ctx context.Context, eid int) {
@@ -114,6 +128,10 @@ func AddEvent(ctx context.Context, eid int) {
 			Payload:   EventSvr{TiDBId: tidbid},
 		}
 	case Event_SQL:
+		userQuery, ok := ctx.Value(LabEvent_UserQuery).(bool)
+		if !ok || !userQuery {
+			return
+		}
 		sqlEvent, ok := ctx.Value(LabEvent_Key).(*SQLEvent)
 		if ok {
 			physicalPlan, ok := sqlEvent.PhysicalPlan.(core.PhysicalPlan)
