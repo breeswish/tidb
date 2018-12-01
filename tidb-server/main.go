@@ -16,6 +16,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/pingcap/tidb/lab"
 	"os"
 	"runtime"
 	"strconv"
@@ -132,6 +133,7 @@ func main() {
 	registerStores()
 	registerMetrics()
 	loadConfig()
+	initLab()
 	overrideConfig()
 	validateConfig()
 	setGlobalVars()
@@ -146,6 +148,10 @@ func main() {
 	runServer()
 	cleanup()
 	os.Exit(0)
+}
+
+func initLab() {
+	lab.InitLab(cfg.Host,  cfg.Port)
 }
 
 func registerStores() {
@@ -464,6 +470,7 @@ func serverShutdown(isgraceful bool) {
 		xsvr.Close() // Should close xserver before server.
 	}
 	svr.Close()
+	lab.AddEvent(nil, lab.Event_Svr_Stop)
 }
 
 func setupMetrics() {
@@ -502,6 +509,7 @@ func runServer() {
 		err := xsvr.Run()
 		terror.MustNil(err)
 	}
+	lab.AddEvent(nil, lab.Event_Svr_Start)
 }
 
 func closeDomainAndStorage() {
@@ -515,4 +523,5 @@ func cleanup() {
 		svr.GracefulDown()
 	}
 	closeDomainAndStorage()
+	lab.AddEvent(nil, lab.Event_Svr_Stop)
 }

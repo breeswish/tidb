@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/pingcap/tidb/lab"
 	"net"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ngaut/pools"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
@@ -851,6 +853,7 @@ func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec
 }
 
 func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
+	sqlEvent := lab.SQLEvent{TxnId: uuid.New().String(), Sql: sql}
 	s.PrepareTxnCtx(ctx)
 	connID := s.sessionVars.ConnectionID
 	err = s.loadCommonGlobalVariablesIfNeeded()
@@ -882,12 +885,20 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 			return nil, errors.Trace(err)
 		}
 		stmt, err := compiler.Compile(ctx, stmtNode)
+		if stmt != nil {
+			sqlEvent.PhysicalPlan = stmt.Plan
+		}
+		ctx = context.WithValue(ctx, lab.LabEvent_Key, &sqlEvent)
+		lab.AddEvent(ctx, lab.Event_SQL)
 		if err != nil {
 			s.rollbackOnError(ctx)
 			log.Warnf("con:%d compile error:\n%v\n%s", connID, err, sql)
 			return nil, errors.Trace(err)
 		}
 		metrics.SessionExecuteCompileDuration.WithLabelValues(label).Observe(time.Since(startTS).Seconds())
+		if len(stmtNodes) == 1 {
+			sqlEvent.PhysicalPlan = stmt
+		}
 
 		// Step3: Execute the physical plan.
 		if recordSets, err = s.executeStatement(ctx, connID, stmtNode, stmt, recordSets); err != nil {
