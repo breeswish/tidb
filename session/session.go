@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/pingcap/tidb/lab"
+	"github.com/pingcap/tidb/labHelper"
 	"net"
 	"strconv"
 	"strings"
@@ -885,11 +886,10 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 			return nil, errors.Trace(err)
 		}
 		stmt, err := compiler.Compile(ctx, stmtNode)
-		if stmt != nil {
-			sqlEvent.PhysicalPlan = stmt.Plan
+		userQuery, ok := ctx.Value(lab.LabEvent_UserQuery).(bool)
+		if ok && userQuery {
+			lab.AddEvent(lab.Event_SQL, &sqlEvent)
 		}
-		ctx = context.WithValue(ctx, lab.LabEvent_Key, &sqlEvent)
-		lab.AddEvent(ctx, lab.Event_SQL)
 		if err != nil {
 			s.rollbackOnError(ctx)
 			log.Warnf("con:%d compile error:\n%v\n%s", connID, err, sql)
@@ -897,7 +897,7 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 		}
 		metrics.SessionExecuteCompileDuration.WithLabelValues(label).Observe(time.Since(startTS).Seconds())
 		if len(stmtNodes) == 1 {
-			sqlEvent.PhysicalPlan = stmt
+			sqlEvent.PhysicalPlan = labHelper.PhysicalPlantoDot(stmt)
 		}
 
 		// Step3: Execute the physical plan.

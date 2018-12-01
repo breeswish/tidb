@@ -1,10 +1,8 @@
 package lab
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/pingcap/tidb/planner/core"
 	"golang.org/x/net/context"
 	"os"
 	"strings"
@@ -18,6 +16,9 @@ const (
 	Event_Svr_Start = 0
 	Event_SQL = 1
 	Event_Svr_Stop = 2
+	Event_Coproc = 3
+	Event_Get = 4
+	Fuck_Prefix = "_fuck_prefix"
 )
 
 var event chan Event
@@ -27,7 +28,7 @@ var tidbid string
 type SQLEvent struct {
 	TiDBId  		string 		`json:"tidb_id"`
 	Sql  			string 		`json:"sql"`
-	PhysicalPlan	interface{} `json:"plan"`
+	PhysicalPlan	string `json:"plan"`
 	TxnId			string  	`json:"txn_id"`
 }
 
@@ -110,7 +111,11 @@ func TestUserQuery(ctx context.Context, msg string) bool {
 	return ret
 }
 
-func AddEvent(ctx context.Context, eid int) {
+type ReqData struct {
+	RegionId uint64 `json:"region_id"`
+}
+
+func AddEvent(eid int, data interface{}) {
 	ts := time.Now().UnixNano() / 1000000
 	switch eid {
 	case Event_Svr_Start:
@@ -128,16 +133,8 @@ func AddEvent(ctx context.Context, eid int) {
 			Payload:   EventSvr{TiDBId: tidbid},
 		}
 	case Event_SQL:
-		userQuery, ok := ctx.Value(LabEvent_UserQuery).(bool)
-		if !ok || !userQuery {
-			return
-		}
-		sqlEvent, ok := ctx.Value(LabEvent_Key).(*SQLEvent)
+		sqlEvent, ok := data.(*SQLEvent)
 		if ok {
-			physicalPlan, ok := sqlEvent.PhysicalPlan.(core.PhysicalPlan)
-			if ok {
-				sqlEvent.PhysicalPlan = physicalPlantoDot(physicalPlan)
-			}
 			event <- Event {
 				TS:            time.Now().UnixNano(),
 				EvId:      eid,
@@ -145,61 +142,28 @@ func AddEvent(ctx context.Context, eid int) {
 				Payload:   sqlEvent,
 			}
 		}
+	case Event_Coproc:
+		reqData, ok := data.(*ReqData)
+		if ok {
+			event <- Event {
+				TS:            time.Now().UnixNano(),
+				EvId:      eid,
+				EventName: "TiDBCoproc",
+				Payload:   reqData,
+			}
+		}
+	case Event_Get:
+		reqData, ok := data.(*ReqData)
+		if ok {
+			event <- Event {
+				TS:        time.Now().UnixNano(),
+				EvId:      eid,
+				EventName: "TiDBGet",
+				Payload:   reqData,
+			}
+		}
 	default:
 		panic(fmt.Sprintf("Unknown event type %v", eid))
-	}
-}
-
-func physicalPlantoDot(p core.PhysicalPlan) string {
-	buffer := bytes.NewBufferString("")
-	buffer.WriteString(fmt.Sprintf("\ndigraph %s {\n", p.ExplainID()))
-
-	toDotHelper(p, "root", buffer)
-	buffer.WriteString(fmt.Sprintln("}"))
-	return buffer.String()
-}
-
-func toDotHelper(p core.PhysicalPlan, taskTp string, buffer *bytes.Buffer) {
-	buffer.WriteString(fmt.Sprintf("subgraph cluster%v{\n", p.ID()))
-	buffer.WriteString("node [style=filled, color=lightgrey]\n")
-	buffer.WriteString("color=black\n")
-	buffer.WriteString(fmt.Sprintf("label = \"%s\"\n", taskTp))
-	if len(p.Children()) == 0 {
-		buffer.WriteString(fmt.Sprintf("\"%s\"\n}\n", p.ExplainID()))
-		return
-	}
-
-	var copTasks []core.PhysicalPlan
-	var pipelines []string
-
-	for planQueue := []core.PhysicalPlan{p}; len(planQueue) > 0; planQueue = planQueue[1:] {
-		curPlan := planQueue[0]
-		switch copPlan := curPlan.(type) {
-		case *core.PhysicalTableReader:
-			pipelines = append(pipelines, fmt.Sprintf("\"%s\" -> \"%s\"\n", copPlan.ExplainID(), copPlan.TablePlans[0].ExplainID()))
-			copTasks = append(copTasks, copPlan.TablePlans[0])
-		case *core.PhysicalIndexReader:
-			pipelines = append(pipelines, fmt.Sprintf("\"%s\" -> \"%s\"\n", copPlan.ExplainID(), copPlan.IndexPlans[0].ExplainID()))
-			copTasks = append(copTasks, copPlan.IndexPlans[0])
-		case *core.PhysicalIndexLookUpReader:
-			pipelines = append(pipelines, fmt.Sprintf("\"%s\" -> \"%s\"\n", copPlan.ExplainID(), copPlan.TablePlans[0]))
-			pipelines = append(pipelines, fmt.Sprintf("\"%s\" -> \"%s\"\n", copPlan.ExplainID(), copPlan.IndexPlans[0]))
-			copTasks = append(copTasks, copPlan.TablePlans[0])
-			copTasks = append(copTasks, copPlan.IndexPlans[0])
-		}
-		for _, child := range curPlan.Children() {
-			buffer.WriteString(fmt.Sprintf("\"%s\" -> \"%s\"\n", curPlan.ExplainID(), child.ExplainID()))
-			planQueue = append(planQueue, child)
-		}
-	}
-	buffer.WriteString("}\n")
-
-	for _, cop := range copTasks {
-		toDotHelper(cop.(core.PhysicalPlan), "cop", buffer)
-	}
-
-	for i := range pipelines {
-		buffer.WriteString(pipelines[i])
 	}
 }
 

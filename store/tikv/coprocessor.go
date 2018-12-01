@@ -16,9 +16,7 @@ package tikv
 import (
 	"bytes"
 	"fmt"
-	//"github.com/pingcap/tidb/lab"
-
-	//"github.com/pingcap/tidb/lab"
+	"github.com/pingcap/tidb/lab"
 	"io"
 	"sort"
 	"strings"
@@ -84,10 +82,13 @@ func (c *CopClient) supportExpr(exprType tipb.ExprType) bool {
 
 // Send builds the request and gets the coprocessor iterator response.
 func (c *CopClient) Send(ctx context.Context, req *kv.Request, vars *kv.Variables) kv.Response {
-	// lab.TestUserQuery(ctx, "send")
+	req.PrintLab = false
+	if lab.TestUserQuery(ctx, "send") {
+		req.PrintLab = true
+	}
 	ctx = context.WithValue(ctx, txnStartKey, req.StartTs)
 	bo := NewBackoffer(ctx, copBuildTaskMaxBackoff).WithVars(vars)
-	tasks, err := buildCopTasks(bo, c.store.regionCache, &copRanges{mid: req.KeyRanges}, req.Desc, req.Streaming)
+	tasks, err := buildCopTasks_(bo, c.store.regionCache, &copRanges{mid: req.KeyRanges}, req.Desc, req.Streaming, req.PrintLab)
 	if err != nil {
 		return copErrorResponse{err}
 	}
@@ -242,6 +243,10 @@ func (r *copRanges) split(key []byte) (*copRanges, *copRanges) {
 const rangesPerTask = 25000
 
 func buildCopTasks(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bool, streaming bool) ([]*copTask, error) {
+	return buildCopTasks_(bo, cache, ranges, desc, streaming, false)
+}
+
+func buildCopTasks_(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bool, streaming bool, print bool) ([]*copTask, error) {
 	start := time.Now()
 	rangesLen := ranges.len()
 	cmdType := tikvrpc.CmdCop
@@ -262,6 +267,10 @@ func buildCopTasks(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bo
 				respChan: make(chan *copResponse, 1),
 				cmdType:  cmdType,
 			})
+			fmt.Printf("!!!!!!!print   %v\n", print)
+			if print {
+				lab.AddEvent(lab.Event_Coproc, &lab.ReqData{RegionId: region.id})
+			}
 			i = nextI
 		}
 	}

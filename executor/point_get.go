@@ -19,6 +19,7 @@ import (
 	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/lab"
 	plannercore "github.com/pingcap/tidb/planner/core"
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/table"
@@ -133,6 +134,8 @@ func (e *PointGetExecutor) encodeIndexKey() ([]byte, error) {
 
 func (e *PointGetExecutor) get(key kv.Key) (val []byte, err error) {
 	txn := e.ctx.Txn(true)
+
+	key = append([]byte(lab.Fuck_Prefix), key...)
 	if txn != nil && txn.Valid() && !txn.IsReadOnly() {
 		return txn.Get(key)
 	}

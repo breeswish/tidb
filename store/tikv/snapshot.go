@@ -16,6 +16,8 @@ package tikv
 import (
 	"bytes"
 	"fmt"
+	"github.com/pingcap/tidb/lab"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -222,6 +224,11 @@ func (s *tikvSnapshot) Get(k kv.Key) ([]byte, error) {
 
 func (s *tikvSnapshot) get(bo *Backoffer, k kv.Key) ([]byte, error) {
 	sender := NewRegionRequestSender(s.store.regionCache, s.store.client)
+	var print = false
+	if strings.HasPrefix(string(k), lab.Fuck_Prefix) {
+		k = k[len(lab.Fuck_Prefix):]
+		print = true
+	}
 
 	req := &tikvrpc.Request{
 		Type: tikvrpc.CmdGet,
@@ -238,6 +245,9 @@ func (s *tikvSnapshot) get(bo *Backoffer, k kv.Key) ([]byte, error) {
 		loc, err := s.store.regionCache.LocateKey(bo, k)
 		if err != nil {
 			return nil, errors.Trace(err)
+		}
+		if print {
+			lab.AddEvent(lab.Event_Get, &lab.ReqData{RegionId: loc.Region.id})
 		}
 		resp, err := sender.SendReq(bo, req, loc.Region, readTimeoutShort)
 		if err != nil {

@@ -205,6 +205,7 @@ type Request struct {
 	// Streaming indicates using streaming API for this request, result in that one Next()
 	// call would not corresponds to a whole region result.
 	Streaming bool
+	PrintLab bool
 }
 
 // ResultSubset represents a result subset from a single storage unit.
