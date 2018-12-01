@@ -463,6 +463,7 @@ func createServer() {
 }
 
 func serverShutdown(isgraceful bool) {
+	lab.AddEvent(lab.Event_Svr_Stop, nil)
 	if isgraceful {
 		graceful = true
 	}
