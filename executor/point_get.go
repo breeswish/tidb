@@ -89,6 +89,9 @@ func (e *PointGetExecutor) Next(ctx context.Context, chk *chunk.Chunk) error {
 		if err1 != nil {
 			return errors.Trace(err1)
 		}
+		if lab.TestUserQuery(ctx, "PointGet") {
+			idxKey = append([]byte(lab.Fuck_Prefix), idxKey...)
+		}
 		handleVal, err1 := e.get(idxKey)
 		if err1 != nil && !kv.ErrNotExist.Equal(err1) {
 			return errors.Trace(err1)
@@ -102,6 +105,9 @@ func (e *PointGetExecutor) Next(ctx context.Context, chk *chunk.Chunk) error {
 		}
 	}
 	key := tablecodec.EncodeRowKeyWithHandle(e.tblInfo.ID, e.handle)
+	if lab.TestUserQuery(ctx, "PointGet2") {
+		key = append([]byte(lab.Fuck_Prefix), key...)
+	}
 	val, err := e.get(key)
 	if err != nil && !kv.ErrNotExist.Equal(err) {
 		return errors.Trace(err)
@@ -135,7 +141,6 @@ func (e *PointGetExecutor) encodeIndexKey() ([]byte, error) {
 func (e *PointGetExecutor) get(key kv.Key) (val []byte, err error) {
 	txn := e.ctx.Txn(true)
 
-	key = append([]byte(lab.Fuck_Prefix), key...)
 	if txn != nil && txn.Valid() && !txn.IsReadOnly() {
 		return txn.Get(key)
 	}

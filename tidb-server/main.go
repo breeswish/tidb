@@ -470,7 +470,6 @@ func serverShutdown(isgraceful bool) {
 		xsvr.Close() // Should close xserver before server.
 	}
 	svr.Close()
-	lab.AddEvent(lab.Event_Svr_Stop, nil)
 }
 
 func setupMetrics() {
@@ -503,13 +502,13 @@ func setupTracing() {
 }
 
 func runServer() {
+	lab.AddEvent(lab.Event_Svr_Start, nil)
 	err := svr.Run()
 	terror.MustNil(err)
 	if cfg.XProtocol.XServer {
 		err := xsvr.Run()
 		terror.MustNil(err)
 	}
-	lab.AddEvent(lab.Event_Svr_Start, nil)
 }
 
 func closeDomainAndStorage() {
@@ -519,9 +518,10 @@ func closeDomainAndStorage() {
 }
 
 func cleanup() {
+	fmt.Println("cleanup!!!!!!")
+	lab.AddEvent(lab.Event_Svr_Stop, nil)
 	if graceful {
 		svr.GracefulDown()
 	}
 	closeDomainAndStorage()
-	lab.AddEvent(lab.Event_Svr_Stop, nil)
 }

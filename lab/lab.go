@@ -24,6 +24,8 @@ const (
 var event chan Event
 
 var tidbid string
+var host string
+var port string
 
 type SQLEvent struct {
 	TiDBId  		string 		`json:"tidb_id"`
@@ -35,6 +37,8 @@ type SQLEvent struct {
 
 type EventSvr struct {
 	TiDBId  string 		`json:"tidb_id"`
+	Host    string		`json:"host"`
+	Port    string		`json:"port"`
 }
 
 type Event struct {
@@ -123,14 +127,22 @@ func AddEvent(eid int, data interface{}) {
 			TS:        ts,
 			EvId:      eid,
 			EventName: "TiDBStarted",
-			Payload:   EventSvr{TiDBId: tidbid},
+			Payload:   EventSvr {
+				TiDBId: tidbid,
+				Host: host,
+				Port: port,
+			},
 		}
 	case Event_Svr_Stop:
 		event <- Event {
 			TS:        ts,
 			EvId:      eid,
 			EventName: "TiDBStopped",
-			Payload:   EventSvr{TiDBId: tidbid},
+			Payload:   EventSvr{
+				TiDBId: tidbid,
+				Host: host,
+				Port: port,
+			},
 		}
 	case Event_SQL:
 		sqlEvent, ok := data.(*SQLEvent)
@@ -177,8 +189,11 @@ func runLabEventPusher() {
 	}
 }
 
-func InitLab(host string, port uint) {
+func InitLab(_host string, _port uint) {
+	host = _host
+	port = fmt.Sprintf("%v", _port)
 	tidbid = fmt.Sprintf("%v:%v", host, port)
+
 	event = make(chan Event)
 	go runLabEventPusher()
 }
