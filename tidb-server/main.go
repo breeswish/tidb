@@ -518,7 +518,6 @@ func closeDomainAndStorage() {
 }
 
 func cleanup() {
-	fmt.Println("cleanup!!!!!!")
 	lab.AddEvent(lab.Event_Svr_Stop, nil)
 	if graceful {
 		svr.GracefulDown()

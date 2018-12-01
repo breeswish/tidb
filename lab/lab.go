@@ -1,9 +1,12 @@
 package lab
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/net/context"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -58,7 +61,7 @@ func (e Event) toString() string {
 }
 
 func pushEvent(e Event) {
-	f, err := os.OpenFile("/tmp/testout.log", os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile("/tmp/tidb.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if !validEvent(e) {
 		return
 	}
@@ -73,7 +76,6 @@ func pushEvent(e Event) {
 	if _, err = f.WriteString(string(data)); err != nil {
 		panic(err)
 	}
-	/*
 	resp, err := http.Post("http://192.168.198.207:12510/event", "application/json", bytes.NewBuffer(data))
 	defer resp.Body.Close()
 	if err != nil {
@@ -82,8 +84,6 @@ func pushEvent(e Event) {
 		data, _ = ioutil.ReadAll(resp.Body)
 		f.WriteString(string(data) + "\n")
 	}
-	*/
-	f.WriteString(string(data) + "\n")
 }
 
 func validEvent(e Event) bool {
