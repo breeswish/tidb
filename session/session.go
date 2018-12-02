@@ -886,20 +886,18 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 			return nil, errors.Trace(err)
 		}
 		stmt, err := compiler.Compile(ctx, stmtNode)
-		userQuery, ok := ctx.Value(lab.LabEvent_UserQuery).(bool)
-		if ok && userQuery {
-			lab.AddEvent(lab.Event_SQL, &sqlEvent)
-		}
+
 		if err != nil {
 			s.rollbackOnError(ctx)
 			log.Warnf("con:%d compile error:\n%v\n%s", connID, err, sql)
 			return nil, errors.Trace(err)
 		}
 		metrics.SessionExecuteCompileDuration.WithLabelValues(label).Observe(time.Since(startTS).Seconds())
-		if len(stmtNodes) == 1 {
-			sqlEvent.PhysicalPlan = labHelper.PhysicalPlantoDot(stmt)
+		userQuery, ok := ctx.Value(lab.LabEvent_UserQuery).(bool)
+		if ok && userQuery {
+			sqlEvent.PhysicalPlan = labHelper.PhysicalPlantoDot(stmt.Plan)
+			lab.AddEvent(lab.Event_SQL, &sqlEvent)
 		}
-
 		// Step3: Execute the physical plan.
 		if recordSets, err = s.executeStatement(ctx, connID, stmtNode, stmt, recordSets); err != nil {
 			return nil, errors.Trace(err)

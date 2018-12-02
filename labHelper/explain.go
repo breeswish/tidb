@@ -8,10 +8,12 @@ import (
 
 // func PhysicalPlantoDot(p core.PhysicalPlan) string {
 func PhysicalPlantoDot(_p interface{}) string {
+	fmt.Println("!!!!!!PhysicalPlantoDot")
 	p, ok := _p.(core.PhysicalPlan)
 	if !ok {
 		return ""
 	}
+	fmt.Println("!!!!!!PhysicalPlantoDot!!!!!")
 	buffer := bytes.NewBufferString("")
 	buffer.WriteString(fmt.Sprintf("\ndigraph %s {\n", p.ExplainID()))
 
