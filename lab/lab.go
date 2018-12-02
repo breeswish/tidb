@@ -35,8 +35,9 @@ var port string
 type SQLEvent struct {
 	TiDBId  		string 		`json:"tidb_id"`
 	Sql  			string 		`json:"sql"`
-	PhysicalPlan	string `json:"plan"`
+	PhysicalPlan	string		`json:"plan"`
 	TxnId			string  	`json:"txn_id"`
+	Kind            string		`json:"kind"`
 }
 
 
@@ -86,6 +87,16 @@ func pushEvent(e Event) {
 		data, _ = ioutil.ReadAll(resp.Body)
 		f.WriteString(string(data) + "\n")
 	}
+}
+
+func chooseKind(sql string) string {
+	sql = strings.ToLower(sql)
+	if strings.Contains(sql, "insert") ||
+		strings.Contains(sql, "update") ||
+		strings.Contains(sql, "delete") {
+		return "write"
+	}
+	return "read"
 }
 
 func validEvent(e Event) bool {
@@ -149,9 +160,11 @@ func AddEvent(eid int, data interface{}) {
 		}
 	case Event_SQL:
 		sqlEvent, ok := data.(*SQLEvent)
+		sqlEvent.TiDBId = tidbid
+		sqlEvent.Kind = chooseKind(sqlEvent.Sql)
 		if ok {
 			event <- Event {
-				TS:            time.Now().UnixNano(),
+				TS:        time.Now().UnixNano(),
 				EvId:      eid,
 				EventName: "TiDBReceivedSQL",
 				Payload:   sqlEvent,
