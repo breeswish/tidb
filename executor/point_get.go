@@ -89,7 +89,7 @@ func (e *PointGetExecutor) Next(ctx context.Context, chk *chunk.Chunk) error {
 		if err1 != nil {
 			return errors.Trace(err1)
 		}
-		if lab.TestUserQuery(ctx, "PointGet") {
+		if needPrint, _ := lab.TestUserQuery(ctx, "PointGet"); needPrint {
 			idxKey = append([]byte(lab.Fuck_Prefix), idxKey...)
 		}
 		handleVal, err1 := e.get(idxKey)
@@ -105,7 +105,7 @@ func (e *PointGetExecutor) Next(ctx context.Context, chk *chunk.Chunk) error {
 		}
 	}
 	key := tablecodec.EncodeRowKeyWithHandle(e.tblInfo.ID, e.handle)
-	if lab.TestUserQuery(ctx, "PointGet2") {
+	if needPrint, _ := lab.TestUserQuery(ctx, "PointGet2"); needPrint {
 		key = append([]byte(lab.Fuck_Prefix), key...)
 	}
 	val, err := e.get(key)

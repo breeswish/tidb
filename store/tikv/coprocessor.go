@@ -83,12 +83,13 @@ func (c *CopClient) supportExpr(exprType tipb.ExprType) bool {
 // Send builds the request and gets the coprocessor iterator response.
 func (c *CopClient) Send(ctx context.Context, req *kv.Request, vars *kv.Variables) kv.Response {
 	req.PrintLab = false
-	if lab.TestUserQuery(ctx, "send") {
+	needPrint, sql := lab.TestUserQuery(ctx, "send")
+	if needPrint {
 		req.PrintLab = true
 	}
 	ctx = context.WithValue(ctx, txnStartKey, req.StartTs)
 	bo := NewBackoffer(ctx, copBuildTaskMaxBackoff).WithVars(vars)
-	tasks, err := buildCopTasks_(bo, c.store.regionCache, &copRanges{mid: req.KeyRanges}, req.Desc, req.Streaming, req.PrintLab)
+	tasks, err := buildCopTasks_(bo, c.store.regionCache, &copRanges{mid: req.KeyRanges}, req.Desc, req.Streaming, req.PrintLab, sql)
 	if err != nil {
 		return copErrorResponse{err}
 	}
@@ -123,6 +124,7 @@ type copTask struct {
 	storeAddr string
 	cmdType   tikvrpc.CmdType
 	print     bool
+	sql       string
 }
 
 func (r *copTask) String() string {
@@ -244,10 +246,10 @@ func (r *copRanges) split(key []byte) (*copRanges, *copRanges) {
 const rangesPerTask = 25000
 
 func buildCopTasks(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bool, streaming bool) ([]*copTask, error) {
-	return buildCopTasks_(bo, cache, ranges, desc, streaming, false)
+	return buildCopTasks_(bo, cache, ranges, desc, streaming, false, "")
 }
 
-func buildCopTasks_(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bool, streaming bool, print bool) ([]*copTask, error) {
+func buildCopTasks_(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bool, streaming bool, print bool, sql string) ([]*copTask, error) {
 	start := time.Now()
 	rangesLen := ranges.len()
 	cmdType := tikvrpc.CmdCop
@@ -268,6 +270,7 @@ func buildCopTasks_(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc b
 				respChan: make(chan *copResponse, 1),
 				cmdType:  cmdType,
 				print:    print,
+				sql:      sql,
 			})
 			i = nextI
 		}
@@ -629,7 +632,7 @@ func (worker *copIteratorWorker) handleTaskOnce(bo *Backoffer, task *copTask, ch
 		sender.regionCache.mu.RLock()
 		r := sender.regionCache.getCachedRegion(task.region)
 		sender.regionCache.mu.RUnlock()
-		lab.AddEvent(lab.Event_Coproc, &lab.ReqData{RegionId: r.GetID(), StoreId: r.peer.StoreId})
+		lab.AddEvent(lab.Event_Coproc, &lab.ReqData{Sql: task.sql, RegionId: r.GetID(), StoreId: r.peer.StoreId})
 	}
 	resp, err := sender.SendReq(bo, req, task.region, ReadTimeoutMedium)
 	if err != nil {

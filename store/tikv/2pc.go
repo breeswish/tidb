@@ -83,10 +83,11 @@ type twoPhaseCommitter struct {
 	// should be less than GC life time.
 	maxTxnTimeUse uint64
 	Print 		  bool
+	Sql           string
 }
 
 // newTwoPhaseCommitter creates a twoPhaseCommitter.
-func newTwoPhaseCommitter(txn *tikvTxn, connID uint64, print bool) (*twoPhaseCommitter, error) {
+func newTwoPhaseCommitter(txn *tikvTxn, connID uint64, print bool, sql string) (*twoPhaseCommitter, error) {
 	var (
 		keys    [][]byte
 		size    int
@@ -164,6 +165,7 @@ func newTwoPhaseCommitter(txn *tikvTxn, connID uint64, print bool) (*twoPhaseCom
 		connID:        connID,
 		maxTxnTimeUse: maxTxnTimeUse,
 		Print:         print,
+		Sql:           sql,
 	}, nil
 }
 
@@ -451,7 +453,7 @@ func (c *twoPhaseCommitter) commitSingleBatch(bo *Backoffer, batch batchKeys) er
 		sender.regionCache.mu.RLock()
 		r := sender.regionCache.getCachedRegion(batch.region)
 		sender.regionCache.mu.RUnlock()
-		lab.AddEvent(lab.Event_Commit, &lab.ReqData{RegionId: r.GetID(), StoreId: r.peer.StoreId})
+		lab.AddEvent(lab.Event_Commit, &lab.ReqData{Sql: c.Sql, RegionId: r.GetID(), StoreId: r.peer.StoreId})
 	}
 
 	resp, err := sender.SendReq(bo, req, batch.region, readTimeoutShort)

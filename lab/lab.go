@@ -65,9 +65,7 @@ func (e Event) toString() string {
 
 func pushEvent(e Event) {
 	f, err := os.OpenFile("/tmp/tidb.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-	if !validEvent(e) {
-		return
-	}
+
 	defer f.Close()
 	if err != nil {
 		panic(err)
@@ -99,38 +97,23 @@ func chooseKind(sql string) string {
 	return "read"
 }
 
-func validEvent(e Event) bool {
-	switch e.EvId {
-	case Event_SQL:
-		sqlEvent, ok := e.Payload.(*SQLEvent)
-		if ok {
-			if strings.Contains(sqlEvent.Sql, "tikv_gc_last_run_time") {
-				return false
-			} else {
-				return true
-			}
-		} else {
-			return false
-		}
-	}
-	return true
-}
-
-func TestUserQuery(ctx context.Context, msg string) bool {
+func TestUserQuery(ctx context.Context, msg string) (bool, string) {
 	ret := false
-	userQuery, ok := ctx.Value(LabEvent_UserQuery).(bool)
-	if ok && userQuery {
+	userQuery, ok := ctx.Value(LabEvent_UserQuery).(string)
+	if ok && len(userQuery) != 0 {
 		fmt.Println("!!!!!! USERQUERYYY  " + msg)
 		ret = true
 	} else {
 		fmt.Println("!!!!!! NOT " + msg)
 	}
-	return ret
+	return ret, userQuery
 }
 
 type ReqData struct {
+	TidbId   string `json:"tidb_id"`
 	RegionId uint64 `json:"region_id"`
 	StoreId  uint64 `json:"store_id"`
+	Sql      string `json:"sql"`
 }
 
 func AddEvent(eid int, data interface{}) {
@@ -172,6 +155,7 @@ func AddEvent(eid int, data interface{}) {
 		}
 	case Event_Coproc:
 		reqData, ok := data.(*ReqData)
+		reqData.TidbId = tidbid
 		if ok {
 			event <- Event {
 				TS:            time.Now().UnixNano(),
@@ -182,6 +166,7 @@ func AddEvent(eid int, data interface{}) {
 		}
 	case Event_Get:
 		reqData, ok := data.(*ReqData)
+		reqData.TidbId = tidbid
 		if ok {
 			event <- Event {
 				TS:        time.Now().UnixNano(),
@@ -192,6 +177,7 @@ func AddEvent(eid int, data interface{}) {
 		}
 	case Event_Commit:
 		reqData, ok := data.(*ReqData)
+		reqData.TidbId = tidbid
 		if ok {
 			event <- Event {
 				TS:        time.Now().UnixNano(),

@@ -893,8 +893,8 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec
 			return nil, errors.Trace(err)
 		}
 		metrics.SessionExecuteCompileDuration.WithLabelValues(label).Observe(time.Since(startTS).Seconds())
-		userQuery, ok := ctx.Value(lab.LabEvent_UserQuery).(bool)
-		if ok && userQuery {
+		userQuery, ok := ctx.Value(lab.LabEvent_UserQuery).(string)
+		if ok && len(userQuery) != 0 {
 			sqlEvent.PhysicalPlan = labHelper.PhysicalPlantoDot(stmt.Plan)
 			lab.AddEvent(lab.Event_SQL, &sqlEvent)
 		}

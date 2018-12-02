@@ -181,7 +181,8 @@ func (txn *tikvTxn) Commit(ctx context.Context) error {
 	if val != nil {
 		connID = val.(uint64)
 	}
-	committer, err := newTwoPhaseCommitter(txn, connID, lab.TestUserQuery(ctx, "2PC"))
+	needPrint, sql := lab.TestUserQuery(ctx, "2PC")
+	committer, err := newTwoPhaseCommitter(txn, connID, needPrint, sql)
 	if err != nil || committer == nil {
 		return errors.Trace(err)
 	}

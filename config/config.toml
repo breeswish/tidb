@@ -10,7 +10,7 @@ advertise-address = ""
 port = 4001
 
 # Registered store name, [tikv, mocktikv]
-store = "tikv"
+store = "mocktikv"
 
 # TiDB storage path.
 path = "127.0.0.1:2379"

@@ -15,7 +15,6 @@ package executor
 
 import (
 	"fmt"
-	"github.com/pingcap/tidb/lab"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -86,7 +85,6 @@ type baseExecutor struct {
 
 // Open initializes children recursively and "childrenResults" according to children's schemas.
 func (e *baseExecutor) Open(ctx context.Context) error {
-	lab.TestUserQuery(ctx, "base query")
 	for _, child := range e.children {
 		err := child.Open(ctx)
 		if err != nil {
