@@ -6,11 +6,14 @@ host = "0.0.0.0"
 # tidb server advertise IP.
 advertise-address = ""
 
+# TiDB Lab Address. e.g. 127.0.0.1:12510. Empty means disable reporting to lab.
+lab-address = ""
+
 # TiDB server port.
 port = 4000
 
 # Registered store name, [tikv, mocktikv]
-store = "mocktikv"
+store = "tikv"
 
 # TiDB storage path.
 path = "/tmp/tidb"

@@ -4,24 +4,23 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/context"
-	"io/ioutil"
 	"net/http"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/pingcap/tidb/config"
+	"golang.org/x/net/context"
 )
 
-
 const (
-	LabEvent_Key = "labEvent_Key"
+	LabEvent_Key       = "labEvent_Key"
 	LabEvent_UserQuery = "LabEvent_UserQuery"
-	Event_Svr_Start = 0
-	Event_SQL = 1
-	Event_Svr_Stop = 2
-	Event_Coproc = 3
-	Event_Get = 4
-	Event_Commit = 5
+	Event_Svr_Start    = 0
+	Event_SQL          = 1
+	Event_Svr_Stop     = 2
+	Event_Coproc       = 3
+	Event_Get          = 4
+	Event_Commit       = 5
 
 	Fuck_Prefix = "_fuck_prefix"
 )
@@ -33,25 +32,24 @@ var host string
 var port string
 
 type SQLEvent struct {
-	TiDBId  		string 		`json:"tidb_id"`
-	Sql  			string 		`json:"sql"`
-	PhysicalPlan	string		`json:"plan"`
-	TxnId			string  	`json:"txn_id"`
-	Kind            string		`json:"kind"`
+	TiDBId       string `json:"tidb_id"`
+	Sql          string `json:"sql"`
+	PhysicalPlan string `json:"plan"`
+	TxnId        string `json:"txn_id"`
+	Kind         string `json:"kind"`
 }
 
-
 type EventSvr struct {
-	TiDBId  string 		`json:"tidb_id"`
-	Host    string		`json:"host"`
-	Port    string		`json:"port"`
+	TiDBId string `json:"tidb_id"`
+	Host   string `json:"host"`
+	Port   string `json:"port"`
 }
 
 type Event struct {
-	TS            int64  `json:"timestamp"`
-	EvId		  int	 `json:"eid"`
-	EventName     string `json:"event_name""`
-	Payload       interface{}  `json:"payload""`
+	TS        int64       `json:"timestamp"`
+	EvId      int         `json:"eid"`
+	EventName string      `json:"event_name""`
+	Payload   interface{} `json:"payload""`
 }
 
 func (e Event) toString() string {
@@ -64,26 +62,18 @@ func (e Event) toString() string {
 }
 
 func pushEvent(e Event) {
-	f, err := os.OpenFile("/tmp/tidb.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-
-	defer f.Close()
-	if err != nil {
-		panic(err)
+	cfg := config.GetGlobalConfig()
+	if len(cfg.LabAddress) == 0 {
+		return
 	}
 	data, err := json.Marshal(e)
 	if err != nil {
 		panic(err)
 	}
-	if _, err = f.WriteString(string(data)); err != nil {
-		panic(err)
-	}
-	resp, err := http.Post("http://192.168.198.207:12510/event", "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(fmt.Sprintf("http://%s/event", cfg.LabAddress), "application/json", bytes.NewBuffer(data))
 	defer resp.Body.Close()
 	if err != nil {
 		fmt.Println(err)
-	} else {
-		data, _ = ioutil.ReadAll(resp.Body)
-		f.WriteString(string(data) + "\n")
 	}
 }
 
@@ -101,10 +91,10 @@ func TestUserQuery(ctx context.Context, msg string) (bool, string) {
 	ret := false
 	userQuery, ok := ctx.Value(LabEvent_UserQuery).(string)
 	if ok && len(userQuery) != 0 {
-		fmt.Println("!!!!!! USERQUERYYY  " + msg)
+		// fmt.Println("!!!!!! USERQUERYYY  " + msg)
 		ret = true
 	} else {
-		fmt.Println("!!!!!! NOT " + msg)
+		// fmt.Println("!!!!!! NOT " + msg)
 	}
 	return ret, userQuery
 }
@@ -120,25 +110,25 @@ func AddEvent(eid int, data interface{}) {
 	ts := time.Now().UnixNano() / 1000000
 	switch eid {
 	case Event_Svr_Start:
-		event <- Event {
+		event <- Event{
 			TS:        ts,
 			EvId:      eid,
 			EventName: "TiDBStarted",
-			Payload:   EventSvr {
+			Payload: EventSvr{
 				TiDBId: tidbid,
-				Host: host,
-				Port: port,
+				Host:   host,
+				Port:   port,
 			},
 		}
 	case Event_Svr_Stop:
-		event <- Event {
+		event <- Event{
 			TS:        ts,
 			EvId:      eid,
 			EventName: "TiDBStopped",
-			Payload:   EventSvr{
+			Payload: EventSvr{
 				TiDBId: tidbid,
-				Host: host,
-				Port: port,
+				Host:   host,
+				Port:   port,
 			},
 		}
 	case Event_SQL:
@@ -146,7 +136,7 @@ func AddEvent(eid int, data interface{}) {
 		sqlEvent.TiDBId = tidbid
 		sqlEvent.Kind = chooseKind(sqlEvent.Sql)
 		if ok {
-			event <- Event {
+			event <- Event{
 				TS:        time.Now().UnixNano(),
 				EvId:      eid,
 				EventName: "TiDBReceivedSQL",
@@ -157,8 +147,8 @@ func AddEvent(eid int, data interface{}) {
 		reqData, ok := data.(*ReqData)
 		reqData.TidbId = tidbid
 		if ok {
-			event <- Event {
-				TS:            time.Now().UnixNano(),
+			event <- Event{
+				TS:        time.Now().UnixNano(),
 				EvId:      eid,
 				EventName: "TiDBCoproc",
 				Payload:   reqData,
@@ -168,7 +158,7 @@ func AddEvent(eid int, data interface{}) {
 		reqData, ok := data.(*ReqData)
 		reqData.TidbId = tidbid
 		if ok {
-			event <- Event {
+			event <- Event{
 				TS:        time.Now().UnixNano(),
 				EvId:      eid,
 				EventName: "TiDBGet",
@@ -179,7 +169,7 @@ func AddEvent(eid int, data interface{}) {
 		reqData, ok := data.(*ReqData)
 		reqData.TidbId = tidbid
 		if ok {
-			event <- Event {
+			event <- Event{
 				TS:        time.Now().UnixNano(),
 				EvId:      eid,
 				EventName: "TiDBCommit",
@@ -191,11 +181,10 @@ func AddEvent(eid int, data interface{}) {
 	}
 }
 
-
 func runLabEventPusher() {
 	for {
 		var e Event
-		e = <- event
+		e = <-event
 		pushEvent(e)
 		time.Sleep(1000)
 	}
@@ -209,6 +198,3 @@ func InitLab(_host string, _port uint) {
 	event = make(chan Event)
 	go runLabEventPusher()
 }
-
-
-

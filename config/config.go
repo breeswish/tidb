@@ -46,6 +46,7 @@ var (
 type Config struct {
 	Host             string          `toml:"host" json:"host"`
 	AdvertiseAddress string          `toml:"advertise-address" json:"advertise-address"`
+	LabAddress       string          `toml:"lab-address" json:"lab-address"`
 	Port             uint            `toml:"port" json:"port"`
 	Cors             string          `toml:"cors" json:"cors"`
 	Store            string          `toml:"store" json:"store"`
@@ -256,6 +257,7 @@ type Binlog struct {
 var defaultConf = Config{
 	Host:             "0.0.0.0",
 	AdvertiseAddress: "",
+	LabAddress:       "",
 	Port:             4000,
 	Cors:             "",
 	Store:            "mocktikv",
