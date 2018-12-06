@@ -186,7 +186,6 @@ func runLabEventPusher() {
 		var e Event
 		e = <-event
 		pushEvent(e)
-		time.Sleep(1000)
 	}
 }
 
