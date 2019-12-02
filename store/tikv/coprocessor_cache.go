@@ -19,6 +19,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pingcap/tidb/util/logutil"
+	"go.uber.org/zap"
+
 	"github.com/dgraph-io/ristretto"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/coprocessor"
@@ -99,11 +102,14 @@ func (c *CoprCache) CheckAdmission(dataSize int, processTime time.Duration) bool
 		return false
 	}
 	if dataSize == 0 || dataSize > c.admissionMaxSize {
+		logutil.BgLogger().Info("Coprocessor Cached for MaxSize Admission", zap.Any("actual_size", dataSize))
 		return false
 	}
 	if processTime == 0 || processTime < c.admissionMinProcessTime {
+		logutil.BgLogger().Info("Coprocessor Cached for MinProcessTime Admission", zap.Duration("actual_time", processTime))
 		return false
 	}
+	logutil.BgLogger().Info("Coprocessor Admission Succeeded")
 	return true
 }
 
