@@ -109,7 +109,7 @@ func (c *CoprCache) CheckAdmission(dataSize int, processTime time.Duration) bool
 		logutil.BgLogger().Warn("Coprocessor Not Cached for MinProcessTime Admission", zap.Any("size", dataSize), zap.Any("time", processTime))
 		return false
 	}
-	logutil.BgLogger().Info("Coprocessor Admission Succeeded", zap.Any("size", dataSize), zap.Any("time", processTime))
+	logutil.BgLogger().Info("****** Coprocessor Admission Succeeded ******", zap.Any("size", dataSize), zap.Any("time", processTime))
 	return true
 }
 
