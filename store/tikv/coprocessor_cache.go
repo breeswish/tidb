@@ -102,14 +102,14 @@ func (c *CoprCache) CheckAdmission(dataSize int, processTime time.Duration) bool
 		return false
 	}
 	if dataSize == 0 || dataSize > c.admissionMaxSize {
-		logutil.BgLogger().Info("Coprocessor Cached for MaxSize Admission", zap.Any("actual_size", dataSize))
+		logutil.BgLogger().Warn("Coprocessor Not Cached for MaxSize Admission", zap.Any("size", dataSize), zap.Any("time", processTime))
 		return false
 	}
 	if processTime == 0 || processTime < c.admissionMinProcessTime {
-		logutil.BgLogger().Info("Coprocessor Cached for MinProcessTime Admission", zap.Duration("actual_time", processTime))
+		logutil.BgLogger().Warn("Coprocessor Not Cached for MinProcessTime Admission", zap.Any("size", dataSize), zap.Any("time", processTime))
 		return false
 	}
-	logutil.BgLogger().Info("Coprocessor Admission Succeeded")
+	logutil.BgLogger().Info("Coprocessor Admission Succeeded", zap.Any("size", dataSize), zap.Any("time", processTime))
 	return true
 }
 
