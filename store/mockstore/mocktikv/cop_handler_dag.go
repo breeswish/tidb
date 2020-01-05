@@ -48,10 +48,11 @@ import (
 var dummySlice = make([]byte, 0)
 
 type dagContext struct {
-	dagReq    *tipb.DAGRequest
-	keyRanges []*coprocessor.KeyRange
-	startTS   uint64
-	evalCtx   *evalContext
+	dagReq             *tipb.DAGRequest
+	dagReqNonCacheable *tipb.DAGRequestNonCacheablePartial
+	keyRanges          []*coprocessor.KeyRange
+	startTS            uint64
+	evalCtx            *evalContext
 }
 
 func (h *rpcHandler) handleCopDAGRequest(req *coprocessor.Request) *coprocessor.Response {
@@ -60,7 +61,7 @@ func (h *rpcHandler) handleCopDAGRequest(req *coprocessor.Request) *coprocessor.
 		resp.RegionError = err
 		return resp
 	}
-	dagCtx, e, dagReq, err := h.buildDAGExecutor(req)
+	dagCtx, e, dagReq, dagReqNonCacheable, err := h.buildDAGExecutor(req)
 	if err != nil {
 		resp.OtherError = err.Error()
 		return resp
@@ -81,7 +82,7 @@ func (h *rpcHandler) handleCopDAGRequest(req *coprocessor.Request) *coprocessor.
 	}
 
 	var execDetails []*execDetail
-	if dagReq.CollectExecutionSummaries != nil && *dagReq.CollectExecutionSummaries {
+	if dagReqNonCacheable.GetCollectExecutionSummaries() {
 		execDetails = e.ExecDetails()
 	}
 
@@ -95,37 +96,44 @@ func (h *rpcHandler) handleCopDAGRequest(req *coprocessor.Request) *coprocessor.
 	return buildResp(selResp, execDetails, err)
 }
 
-func (h *rpcHandler) buildDAGExecutor(req *coprocessor.Request) (*dagContext, executor, *tipb.DAGRequest, error) {
+func (h *rpcHandler) buildDAGExecutor(req *coprocessor.Request) (*dagContext, executor, *tipb.DAGRequest, *tipb.DAGRequestNonCacheablePartial, error) {
 	if len(req.Ranges) == 0 {
-		return nil, nil, nil, errors.New("request range is null")
+		return nil, nil, nil, nil, errors.New("request range is null")
 	}
 	if req.GetTp() != kv.ReqTypeDAG {
-		return nil, nil, nil, errors.Errorf("unsupported request type %d", req.GetTp())
+		return nil, nil, nil, nil, errors.Errorf("unsupported request type %d", req.GetTp())
 	}
 
 	dagReq := new(tipb.DAGRequest)
 	err := proto.Unmarshal(req.Data, dagReq)
 	if err != nil {
-		return nil, nil, nil, errors.Trace(err)
+		return nil, nil, nil, nil, errors.Trace(err)
+	}
+
+	dagReqNonCacheable := new(tipb.DAGRequestNonCacheablePartial)
+	err = proto.Unmarshal(req.NonCacheableData, dagReqNonCacheable)
+	if err != nil {
+		return nil, nil, nil, nil, errors.Trace(err)
 	}
 
 	sc := flagsToStatementContext(dagReq.Flags)
 	sc.TimeZone, err = constructTimeZone(dagReq.TimeZoneName, int(dagReq.TimeZoneOffset))
 	if err != nil {
-		return nil, nil, nil, errors.Trace(err)
+		return nil, nil, nil, nil, errors.Trace(err)
 	}
 
 	ctx := &dagContext{
-		dagReq:    dagReq,
-		keyRanges: req.Ranges,
-		startTS:   req.StartTs,
-		evalCtx:   &evalContext{sc: sc},
+		dagReq:             dagReq,
+		dagReqNonCacheable: dagReqNonCacheable,
+		keyRanges:          req.Ranges,
+		startTS:            req.StartTs,
+		evalCtx:            &evalContext{sc: sc},
 	}
 	e, err := h.buildDAG(ctx, dagReq.Executors)
 	if err != nil {
-		return nil, nil, nil, errors.Trace(err)
+		return nil, nil, nil, nil, errors.Trace(err)
 	}
-	return ctx, e, dagReq, err
+	return ctx, e, dagReq, dagReqNonCacheable, err
 }
 
 // constructTimeZone constructs timezone by name first. When the timezone name
@@ -136,16 +144,17 @@ func constructTimeZone(name string, offset int) (*time.Location, error) {
 }
 
 func (h *rpcHandler) handleCopStream(ctx context.Context, req *coprocessor.Request) (tikvpb.Tikv_CoprocessorStreamClient, error) {
-	dagCtx, e, dagReq, err := h.buildDAGExecutor(req)
+	dagCtx, e, dagReq, dagReqNonCacheable, err := h.buildDAGExecutor(req)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
 
 	return &mockCopStreamClient{
-		exec:   e,
-		req:    dagReq,
-		ctx:    ctx,
-		dagCtx: dagCtx,
+		exec:            e,
+		req:             dagReq,
+		reqNonCacheable: dagReqNonCacheable,
+		ctx:             ctx,
+		dagCtx:          dagCtx,
 	}, nil
 }
 
@@ -478,11 +487,12 @@ func (mockClientStream) RecvMsg(m interface{}) error  { return nil }
 type mockCopStreamClient struct {
 	mockClientStream
 
-	req      *tipb.DAGRequest
-	exec     executor
-	ctx      context.Context
-	dagCtx   *dagContext
-	finished bool
+	req             *tipb.DAGRequest
+	reqNonCacheable *tipb.DAGRequestNonCacheablePartial
+	exec            executor
+	ctx             context.Context
+	dagCtx          *dagContext
+	finished        bool
 }
 
 type mockCopStreamErrClient struct {
@@ -693,6 +703,8 @@ func (h *rpcHandler) encodeChunk(selResp *tipb.SelectResponse, rows [][][]byte, 
 func buildResp(selResp *tipb.SelectResponse, execDetails []*execDetail, err error) *coprocessor.Response {
 	resp := &coprocessor.Response{}
 
+	nonCacheableData := &tipb.DAGResponseNonCacheablePartial{}
+
 	if len(execDetails) > 0 {
 		execSummary := make([]*tipb.ExecutorExecutionSummary, 0, len(execDetails))
 		for _, d := range execDetails {
@@ -705,7 +717,8 @@ func buildResp(selResp *tipb.SelectResponse, execDetails []*execDetail, err erro
 				NumIterations:   &numIter,
 			})
 		}
-		selResp.ExecutionSummaries = execSummary
+
+		nonCacheableData.ExecutionSummaries = execSummary
 	}
 
 	if err != nil {
@@ -726,6 +739,14 @@ func buildResp(selResp *tipb.SelectResponse, execDetails []*execDetail, err erro
 		return resp
 	}
 	resp.Data = data
+
+	data, err = proto.Marshal(nonCacheableData)
+	if err != nil {
+		resp.OtherError = err.Error()
+		return resp
+	}
+	resp.NonCacheableData = data
+
 	return resp
 }
 

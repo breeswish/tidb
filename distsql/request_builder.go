@@ -73,11 +73,15 @@ func (builder *RequestBuilder) SetTableHandles(tid int64, handles []int64) *Requ
 }
 
 // SetDAGRequest sets the request type to "ReqTypeDAG" and construct request data.
-func (builder *RequestBuilder) SetDAGRequest(dag *tipb.DAGRequest) *RequestBuilder {
+func (builder *RequestBuilder) SetDAGRequest(dag *tipb.DAGRequest, dagNonCacheable *tipb.DAGRequestNonCacheablePartial) *RequestBuilder {
 	if builder.err == nil {
 		builder.Request.Tp = kv.ReqTypeDAG
 		builder.Request.Cacheable = true
 		builder.Request.Data, builder.err = dag.Marshal()
+	}
+
+	if builder.err == nil {
+		builder.Request.NonCacheableData, builder.err = dagNonCacheable.Marshal()
 	}
 
 	return builder

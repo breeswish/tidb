@@ -39,7 +39,7 @@ import (
 
 func (s *testSuite) createSelectNormal(batch, totalRows int, c *C, planIDs []string) (*selectResult, []*types.FieldType) {
 	request, err := (&RequestBuilder{}).SetKeyRanges(nil).
-		SetDAGRequest(&tipb.DAGRequest{}).
+		SetDAGRequest(&tipb.DAGRequest{}, &tipb.DAGRequestNonCacheablePartial{}).
 		SetDesc(false).
 		SetKeepOrder(false).
 		SetFromSessionVars(variable.NewSessionVars()).
@@ -167,7 +167,7 @@ func (s *testSuite) TestSelectWithRuntimeStats(c *C) {
 
 func (s *testSuite) createSelectStreaming(batch, totalRows int, c *C) (*streamResult, []*types.FieldType) {
 	request, err := (&RequestBuilder{}).SetKeyRanges(nil).
-		SetDAGRequest(&tipb.DAGRequest{}).
+		SetDAGRequest(&tipb.DAGRequest{}, &tipb.DAGRequestNonCacheablePartial{}).
 		SetDesc(false).
 		SetKeepOrder(false).
 		SetFromSessionVars(variable.NewSessionVars()).
@@ -443,7 +443,7 @@ func (r *mockResultSubset) RespTime() time.Duration { return 0 }
 
 func createSelectNormal(batch, totalRows int, ctx sessionctx.Context) (*selectResult, []*types.FieldType) {
 	request, _ := (&RequestBuilder{}).SetKeyRanges(nil).
-		SetDAGRequest(&tipb.DAGRequest{}).
+		SetDAGRequest(&tipb.DAGRequest{}, &tipb.DAGRequestNonCacheablePartial{}).
 		SetDesc(false).
 		SetKeepOrder(false).
 		SetFromSessionVars(variable.NewSessionVars()).

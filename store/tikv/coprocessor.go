@@ -464,6 +464,11 @@ func (rs *copResponse) GetData() []byte {
 	return rs.pbResp.Data
 }
 
+// GetNonCacheableData implements the kv.ResultSubset GetNonCacheableData interface.
+func (rs *copResponse) GetNonCacheableData() []byte {
+	return rs.pbResp.NonCacheableData
+}
+
 // GetStartKey implements the kv.ResultSubset GetStartKey interface.
 func (rs *copResponse) GetStartKey() kv.Key {
 	return rs.startKey
@@ -713,10 +718,11 @@ func (worker *copIteratorWorker) handleTaskOnce(bo *Backoffer, task *copTask, ch
 	})
 
 	copReq := coprocessor.Request{
-		Tp:      worker.req.Tp,
-		StartTs: worker.req.StartTs,
-		Data:    worker.req.Data,
-		Ranges:  task.ranges.toPBRanges(),
+		Tp:               worker.req.Tp,
+		StartTs:          worker.req.StartTs,
+		Data:             worker.req.Data,
+		NonCacheableData: worker.req.NonCacheableData,
+		Ranges:           task.ranges.toPBRanges(),
 	}
 
 	var cacheKey []byte = nil

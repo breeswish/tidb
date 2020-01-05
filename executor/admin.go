@@ -103,7 +103,7 @@ func (e *CheckIndexRangeExec) Open(ctx context.Context) error {
 	})
 
 	e.srcChunk = newFirstChunk(e)
-	dagPB, err := e.buildDAGPB()
+	dagPB, dagPBNonCacheable, err := e.buildDAGPB()
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (e *CheckIndexRangeExec) Open(ctx context.Context) error {
 	}
 	var builder distsql.RequestBuilder
 	kvReq, err := builder.SetIndexRanges(sc, e.table.ID, e.index.ID, ranger.FullRange()).
-		SetDAGRequest(dagPB).
+		SetDAGRequest(dagPB, dagPBNonCacheable).
 		SetStartTS(txn.StartTS()).
 		SetKeepOrder(true).
 		SetFromSessionVars(e.ctx.GetSessionVars()).
@@ -131,8 +131,9 @@ func (e *CheckIndexRangeExec) Open(ctx context.Context) error {
 	return nil
 }
 
-func (e *CheckIndexRangeExec) buildDAGPB() (*tipb.DAGRequest, error) {
+func (e *CheckIndexRangeExec) buildDAGPB() (*tipb.DAGRequest, *tipb.DAGRequestNonCacheablePartial, error) {
 	dagReq := &tipb.DAGRequest{}
+	dagReqNonCacheable := &tipb.DAGRequestNonCacheablePartial{}
 	dagReq.TimeZoneName, dagReq.TimeZoneOffset = timeutil.Zone(e.ctx.GetSessionVars().Location())
 	sc := e.ctx.GetSessionVars().StmtCtx
 	dagReq.Flags = sc.PushDownFlags()
@@ -144,10 +145,10 @@ func (e *CheckIndexRangeExec) buildDAGPB() (*tipb.DAGRequest, error) {
 
 	err := plannercore.SetPBColumnsDefaultValue(e.ctx, dagReq.Executors[0].IdxScan.Columns, e.cols)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	distsql.SetEncodeType(e.ctx, dagReq)
-	return dagReq, nil
+	return dagReq, dagReqNonCacheable, nil
 }
 
 func (e *CheckIndexRangeExec) constructIndexScanPB() *tipb.Executor {
@@ -229,8 +230,9 @@ func (e *RecoverIndexExec) constructLimitPB(count uint64) *tipb.Executor {
 	return &tipb.Executor{Tp: tipb.ExecType_TypeLimit, Limit: limitExec}
 }
 
-func (e *RecoverIndexExec) buildDAGPB(txn kv.Transaction, limitCnt uint64) (*tipb.DAGRequest, error) {
+func (e *RecoverIndexExec) buildDAGPB(txn kv.Transaction, limitCnt uint64) (*tipb.DAGRequest, *tipb.DAGRequestNonCacheablePartial, error) {
 	dagReq := &tipb.DAGRequest{}
+	dagReqNonCacheable := &tipb.DAGRequestNonCacheablePartial{}
 	dagReq.TimeZoneName, dagReq.TimeZoneOffset = timeutil.Zone(e.ctx.GetSessionVars().Location())
 	sc := e.ctx.GetSessionVars().StmtCtx
 	dagReq.Flags = sc.PushDownFlags()
@@ -242,7 +244,7 @@ func (e *RecoverIndexExec) buildDAGPB(txn kv.Transaction, limitCnt uint64) (*tip
 	pbColumnInfos := model.ColumnsToProto(e.columns, tblInfo.PKIsHandle)
 	err := plannercore.SetPBColumnsDefaultValue(e.ctx, pbColumnInfos, e.columns)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	tblScanExec := e.constructTableScanPB(pbColumnInfos)
 	dagReq.Executors = append(dagReq.Executors, tblScanExec)
@@ -250,11 +252,11 @@ func (e *RecoverIndexExec) buildDAGPB(txn kv.Transaction, limitCnt uint64) (*tip
 	limitExec := e.constructLimitPB(limitCnt)
 	dagReq.Executors = append(dagReq.Executors, limitExec)
 	distsql.SetEncodeType(e.ctx, dagReq)
-	return dagReq, nil
+	return dagReq, dagReqNonCacheable, nil
 }
 
 func (e *RecoverIndexExec) buildTableScan(ctx context.Context, txn kv.Transaction, t table.Table, startHandle int64, limitCnt uint64) (distsql.SelectResult, error) {
-	dagPB, err := e.buildDAGPB(txn, limitCnt)
+	dagPB, dagPBNonCacheable, err := e.buildDAGPB(txn, limitCnt)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +264,7 @@ func (e *RecoverIndexExec) buildTableScan(ctx context.Context, txn kv.Transactio
 	ranges := []*ranger.Range{{LowVal: []types.Datum{types.NewIntDatum(startHandle)}, HighVal: []types.Datum{types.NewIntDatum(math.MaxInt64)}}}
 	var builder distsql.RequestBuilder
 	kvReq, err := builder.SetTableRanges(tblInfo.ID, ranges, nil).
-		SetDAGRequest(dagPB).
+		SetDAGRequest(dagPB, dagPBNonCacheable).
 		SetStartTS(txn.StartTS()).
 		SetKeepOrder(true).
 		SetFromSessionVars(e.ctx.GetSessionVars()).
@@ -622,7 +624,7 @@ func (e *CleanupIndexExec) Next(ctx context.Context, req *chunk.Chunk) error {
 }
 
 func (e *CleanupIndexExec) buildIndexScan(ctx context.Context, txn kv.Transaction) (distsql.SelectResult, error) {
-	dagPB, err := e.buildIdxDAGPB(txn)
+	dagPB, dagPBNonCacheable, err := e.buildIdxDAGPB(txn)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +632,7 @@ func (e *CleanupIndexExec) buildIndexScan(ctx context.Context, txn kv.Transactio
 	var builder distsql.RequestBuilder
 	ranges := ranger.FullRange()
 	kvReq, err := builder.SetIndexRanges(sc, e.table.Meta().ID, e.index.Meta().ID, ranges).
-		SetDAGRequest(dagPB).
+		SetDAGRequest(dagPB, dagPBNonCacheable).
 		SetStartTS(txn.StartTS()).
 		SetKeepOrder(true).
 		SetFromSessionVars(e.ctx.GetSessionVars()).
@@ -667,8 +669,9 @@ func (e *CleanupIndexExec) Open(ctx context.Context) error {
 	return nil
 }
 
-func (e *CleanupIndexExec) buildIdxDAGPB(txn kv.Transaction) (*tipb.DAGRequest, error) {
+func (e *CleanupIndexExec) buildIdxDAGPB(txn kv.Transaction) (*tipb.DAGRequest, *tipb.DAGRequestNonCacheablePartial, error) {
 	dagReq := &tipb.DAGRequest{}
+	dagReqNonCacheable := &tipb.DAGRequestNonCacheablePartial{}
 	dagReq.TimeZoneName, dagReq.TimeZoneOffset = timeutil.Zone(e.ctx.GetSessionVars().Location())
 	sc := e.ctx.GetSessionVars().StmtCtx
 	dagReq.Flags = sc.PushDownFlags()
@@ -680,13 +683,13 @@ func (e *CleanupIndexExec) buildIdxDAGPB(txn kv.Transaction) (*tipb.DAGRequest, 
 	dagReq.Executors = append(dagReq.Executors, execPB)
 	err := plannercore.SetPBColumnsDefaultValue(e.ctx, dagReq.Executors[0].IdxScan.Columns, e.idxCols)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	limitExec := e.constructLimitPB()
 	dagReq.Executors = append(dagReq.Executors, limitExec)
 	distsql.SetEncodeType(e.ctx, dagReq)
-	return dagReq, nil
+	return dagReq, dagReqNonCacheable, nil
 }
 
 func (e *CleanupIndexExec) constructIndexScanPB() *tipb.Executor {

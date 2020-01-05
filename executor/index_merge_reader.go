@@ -63,16 +63,18 @@ var (
 type IndexMergeReaderExecutor struct {
 	baseExecutor
 
-	table      table.Table
-	indexes    []*model.IndexInfo
-	keepOrders []bool
-	descs      []bool
-	ranges     [][]*ranger.Range
-	dagPBs     []*tipb.DAGRequest
-	startTS    uint64
+	table              table.Table
+	indexes            []*model.IndexInfo
+	keepOrders         []bool
+	descs              []bool
+	ranges             [][]*ranger.Range
+	dagPBs             []*tipb.DAGRequest
+	dagPBsNonCacheable []*tipb.DAGRequestNonCacheablePartial
+	startTS            uint64
 	// handleIdx is the index of handle, which is only used for case of keeping order.
-	handleIdx    int
-	tableRequest *tipb.DAGRequest
+	handleIdx                int
+	tableRequest             *tipb.DAGRequest
+	tableRequestNonCacheable *tipb.DAGRequestNonCacheablePartial
 	// columns are only required by union scan.
 	columns           []*model.ColumnInfo
 	partialStreamings []bool
@@ -157,12 +159,12 @@ func (e *IndexMergeReaderExecutor) startIndexMergeProcessWorker(ctx context.Cont
 func (e *IndexMergeReaderExecutor) startPartialIndexWorker(ctx context.Context, kvRanges []kv.KeyRange, fetchCh chan<- *lookupTableTask, workID int) error {
 	if e.runtimeStats != nil {
 		collExec := true
-		e.dagPBs[workID].CollectExecutionSummaries = &collExec
+		e.dagPBsNonCacheable[workID].CollectExecutionSummaries = &collExec
 	}
 
 	var builder distsql.RequestBuilder
 	kvReq, err := builder.SetKeyRanges(kvRanges).
-		SetDAGRequest(e.dagPBs[workID]).
+		SetDAGRequest(e.dagPBs[workID], e.dagPBsNonCacheable[workID]).
 		SetStartTS(e.startTS).
 		SetDesc(e.descs[workID]).
 		SetKeepOrder(e.keepOrders[workID]).
@@ -209,14 +211,15 @@ func (e *IndexMergeReaderExecutor) startPartialIndexWorker(ctx context.Context, 
 
 func (e *IndexMergeReaderExecutor) buildPartialTableReader(ctx context.Context, workID int) Executor {
 	tableReaderExec := &TableReaderExecutor{
-		baseExecutor: newBaseExecutor(e.ctx, e.schema, stringutil.MemoizeStr(func() string { return e.id.String() + "_tableReader" })),
-		table:        e.table,
-		dagPB:        e.dagPBs[workID],
-		startTS:      e.startTS,
-		streaming:    e.partialStreamings[workID],
-		feedback:     statistics.NewQueryFeedback(0, nil, 0, false),
-		plans:        e.partialPlans[workID],
-		ranges:       e.ranges[workID],
+		baseExecutor:      newBaseExecutor(e.ctx, e.schema, stringutil.MemoizeStr(func() string { return e.id.String() + "_tableReader" })),
+		table:             e.table,
+		dagPB:             e.dagPBs[workID],
+		dagPBNonCacheable: e.dagPBsNonCacheable[workID],
+		startTS:           e.startTS,
+		streaming:         e.partialStreamings[workID],
+		feedback:          statistics.NewQueryFeedback(0, nil, 0, false),
+		plans:             e.partialPlans[workID],
+		ranges:            e.ranges[workID],
 	}
 	return tableReaderExec
 }
@@ -394,13 +397,14 @@ func (e *IndexMergeReaderExecutor) startIndexMergeTableScanWorker(ctx context.Co
 
 func (e *IndexMergeReaderExecutor) buildFinalTableReader(ctx context.Context, handles []int64) (Executor, error) {
 	tableReaderExec := &TableReaderExecutor{
-		baseExecutor: newBaseExecutor(e.ctx, e.schema, stringutil.MemoizeStr(func() string { return e.id.String() + "_tableReader" })),
-		table:        e.table,
-		dagPB:        e.tableRequest,
-		startTS:      e.startTS,
-		streaming:    e.tableStreaming,
-		feedback:     statistics.NewQueryFeedback(0, nil, 0, false),
-		plans:        e.tblPlans,
+		baseExecutor:      newBaseExecutor(e.ctx, e.schema, stringutil.MemoizeStr(func() string { return e.id.String() + "_tableReader" })),
+		table:             e.table,
+		dagPB:             e.tableRequest,
+		dagPBNonCacheable: e.tableRequestNonCacheable,
+		startTS:           e.startTS,
+		streaming:         e.tableStreaming,
+		feedback:          statistics.NewQueryFeedback(0, nil, 0, false),
+		plans:             e.tblPlans,
 	}
 	tableReader, err := e.dataReaderBuilder.buildTableReaderFromHandles(ctx, tableReaderExec, handles)
 	if err != nil {

@@ -32,18 +32,21 @@ import (
 
 // CoprocessorDAGHandler uses to handle cop dag request.
 type CoprocessorDAGHandler struct {
-	sctx    sessionctx.Context
-	resp    *coprocessor.Response
-	selResp *tipb.SelectResponse
-	dagReq  *tipb.DAGRequest
+	sctx                sessionctx.Context
+	resp                *coprocessor.Response
+	selResp             *tipb.SelectResponse
+	selRespNonCacheable *tipb.DAGResponseNonCacheablePartial
+	dagReq              *tipb.DAGRequest
+	dagReqNonCacheable  *tipb.DAGRequestNonCacheablePartial
 }
 
 // NewCoprocessorDAGHandler creates a new CoprocessorDAGHandler.
 func NewCoprocessorDAGHandler(sctx sessionctx.Context) *CoprocessorDAGHandler {
 	return &CoprocessorDAGHandler{
-		sctx:    sctx,
-		resp:    &coprocessor.Response{},
-		selResp: &tipb.SelectResponse{},
+		sctx:                sctx,
+		resp:                &coprocessor.Response{},
+		selResp:             &tipb.SelectResponse{},
+		selRespNonCacheable: &tipb.DAGResponseNonCacheablePartial{},
 	}
 }
 
@@ -88,6 +91,12 @@ func (h *CoprocessorDAGHandler) buildDAGExecutor(req *coprocessor.Request) (Exec
 		return nil, errors.Trace(err)
 	}
 
+	dagReqNonCacheable := new(tipb.DAGRequestNonCacheablePartial)
+	err = proto.Unmarshal(req.Data, dagReqNonCacheable)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
 	stmtCtx := h.sctx.GetSessionVars().StmtCtx
 	stmtCtx.SetFlagsFromPBFlag(dagReq.Flags)
 	stmtCtx.TimeZone, err = timeutil.ConstructTimeZone(dagReq.TimeZoneName, int(dagReq.TimeZoneOffset))
@@ -95,6 +104,7 @@ func (h *CoprocessorDAGHandler) buildDAGExecutor(req *coprocessor.Request) (Exec
 		return nil, errors.Trace(err)
 	}
 	h.dagReq = dagReq
+	h.dagReqNonCacheable = dagReqNonCacheable
 	is := h.sctx.GetSessionVars().TxnCtx.InfoSchema.(infoschema.InfoSchema)
 	// Build physical plan.
 	bp := core.NewPBPlanBuilder(h.sctx, is)
@@ -132,6 +142,14 @@ func (h *CoprocessorDAGHandler) buildResponse(err error) *coprocessor.Response {
 		return h.resp
 	}
 	h.resp.Data = data
+
+	data, err = proto.Marshal(h.selRespNonCacheable)
+	if err != nil {
+		h.resp.OtherError = err.Error()
+		return h.resp
+	}
+	h.resp.NonCacheableData = data
+
 	return h.resp
 }
 

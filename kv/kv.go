@@ -253,10 +253,11 @@ func (t StoreType) Name() string {
 // Request represents a kv request.
 type Request struct {
 	// Tp is the request type.
-	Tp        int64
-	StartTs   uint64
-	Data      []byte
-	KeyRanges []KeyRange
+	Tp               int64
+	StartTs          uint64
+	Data             []byte
+	NonCacheableData []byte
+	KeyRanges        []KeyRange
 
 	// Concurrency is 1, if it only sends the request to a single storage unit when
 	// ResponseIterator.Next is called. If concurrency is greater than 1, the request will be
@@ -292,6 +293,8 @@ type Request struct {
 type ResultSubset interface {
 	// GetData gets the data.
 	GetData() []byte
+	// GetNonCacheableData gets the non-cacheable data.
+	GetNonCacheableData() []byte
 	// GetStartKey gets the start key.
 	GetStartKey() Key
 	// GetExecDetails gets the detail information.

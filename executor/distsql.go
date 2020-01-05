@@ -209,9 +209,10 @@ type IndexReaderExecutor struct {
 	physicalTableID int64
 	ranges          []*ranger.Range
 	// kvRanges are only used for union scan.
-	kvRanges []kv.KeyRange
-	dagPB    *tipb.DAGRequest
-	startTS  uint64
+	kvRanges          []kv.KeyRange
+	dagPB             *tipb.DAGRequest
+	dagPBNonCacheable *tipb.DAGRequestNonCacheablePartial
+	startTS           uint64
 
 	// result returns one or more distsql.PartialResult and each PartialResult is returned by one region.
 	result distsql.SelectResult
@@ -286,7 +287,7 @@ func (e *IndexReaderExecutor) open(ctx context.Context, kvRanges []kv.KeyRange) 
 
 	if e.runtimeStats != nil {
 		collExec := true
-		e.dagPB.CollectExecutionSummaries = &collExec
+		e.dagPBNonCacheable.CollectExecutionSummaries = &collExec
 	}
 	e.kvRanges = kvRanges
 
@@ -294,7 +295,7 @@ func (e *IndexReaderExecutor) open(ctx context.Context, kvRanges []kv.KeyRange) 
 	e.memTracker.AttachTo(e.ctx.GetSessionVars().StmtCtx.MemTracker)
 	var builder distsql.RequestBuilder
 	kvReq, err := builder.SetKeyRanges(kvRanges).
-		SetDAGRequest(e.dagPB).
+		SetDAGRequest(e.dagPB, e.dagPBNonCacheable).
 		SetStartTS(e.startTS).
 		SetDesc(e.desc).
 		SetKeepOrder(e.keepOrder).
@@ -319,14 +320,16 @@ func (e *IndexReaderExecutor) open(ctx context.Context, kvRanges []kv.KeyRange) 
 type IndexLookUpExecutor struct {
 	baseExecutor
 
-	table   table.Table
-	index   *model.IndexInfo
-	ranges  []*ranger.Range
-	dagPB   *tipb.DAGRequest
-	startTS uint64
+	table             table.Table
+	index             *model.IndexInfo
+	ranges            []*ranger.Range
+	dagPB             *tipb.DAGRequest
+	dagPBNonCacheable *tipb.DAGRequestNonCacheablePartial
+	startTS           uint64
 	// handleIdx is the index of handle, which is only used for case of keeping order.
-	handleIdx    int
-	tableRequest *tipb.DAGRequest
+	handleIdx                int
+	tableRequest             *tipb.DAGRequest
+	tableRequestNonCacheable *tipb.DAGRequestNonCacheablePartial
 	// columns are only required by union scan.
 	columns []*model.ColumnInfo
 	*dataReaderBuilder
@@ -436,14 +439,14 @@ func (e *IndexLookUpExecutor) startWorkers(ctx context.Context, initBatchSize in
 func (e *IndexLookUpExecutor) startIndexWorker(ctx context.Context, kvRanges []kv.KeyRange, workCh chan<- *lookupTableTask, initBatchSize int) error {
 	if e.runtimeStats != nil {
 		collExec := true
-		e.dagPB.CollectExecutionSummaries = &collExec
+		e.dagPBNonCacheable.CollectExecutionSummaries = &collExec
 	}
 
 	tracker := memory.NewTracker(stringutil.StringerStr("IndexWorker"), e.ctx.GetSessionVars().MemQuotaIndexLookupReader)
 	tracker.AttachTo(e.memTracker)
 	var builder distsql.RequestBuilder
 	kvReq, err := builder.SetKeyRanges(kvRanges).
-		SetDAGRequest(e.dagPB).
+		SetDAGRequest(e.dagPB, e.dagPBNonCacheable).
 		SetStartTS(e.startTS).
 		SetDesc(e.desc).
 		SetKeepOrder(e.keepOrder).
@@ -533,15 +536,16 @@ func (e *IndexLookUpExecutor) startTableWorker(ctx context.Context, workCh <-cha
 
 func (e *IndexLookUpExecutor) buildTableReader(ctx context.Context, handles []int64) (Executor, error) {
 	tableReaderExec := &TableReaderExecutor{
-		baseExecutor:   newBaseExecutor(e.ctx, e.schema, stringutil.MemoizeStr(func() string { return e.id.String() + "_tableReader" })),
-		table:          e.table,
-		dagPB:          e.tableRequest,
-		startTS:        e.startTS,
-		columns:        e.columns,
-		streaming:      e.tableStreaming,
-		feedback:       statistics.NewQueryFeedback(0, nil, 0, false),
-		corColInFilter: e.corColInTblSide,
-		plans:          e.tblPlans,
+		baseExecutor:      newBaseExecutor(e.ctx, e.schema, stringutil.MemoizeStr(func() string { return e.id.String() + "_tableReader" })),
+		table:             e.table,
+		dagPB:             e.tableRequest,
+		dagPBNonCacheable: e.tableRequestNonCacheable,
+		startTS:           e.startTS,
+		columns:           e.columns,
+		streaming:         e.tableStreaming,
+		feedback:          statistics.NewQueryFeedback(0, nil, 0, false),
+		corColInFilter:    e.corColInTblSide,
+		plans:             e.tblPlans,
 	}
 	tableReaderExec.buildVirtualColumnInfo()
 	tableReader, err := e.dataReaderBuilder.buildTableReaderFromHandles(ctx, tableReaderExec, handles)

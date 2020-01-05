@@ -278,16 +278,17 @@ func (s *testSuite) TestRequestBuilder1(c *C) {
 	}
 
 	actual, err := (&RequestBuilder{}).SetTableRanges(12, ranges, nil).
-		SetDAGRequest(&tipb.DAGRequest{}).
+		SetDAGRequest(&tipb.DAGRequest{}, &tipb.DAGRequestNonCacheablePartial{}).
 		SetDesc(false).
 		SetKeepOrder(false).
 		SetFromSessionVars(variable.NewSessionVars()).
 		Build()
 	c.Assert(err, IsNil)
 	expect := &kv.Request{
-		Tp:      103,
-		StartTs: 0x0,
-		Data:    []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
+		Tp:               103,
+		StartTs:          0x0,
+		Data:             []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
+		NonCacheableData: []uint8{},
 		KeyRanges: []kv.KeyRange{
 			{
 				StartKey: kv.Key{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc, 0x5f, 0x72, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1},
@@ -354,16 +355,17 @@ func (s *testSuite) TestRequestBuilder2(c *C) {
 	}
 
 	actual, err := (&RequestBuilder{}).SetIndexRanges(new(stmtctx.StatementContext), 12, 15, ranges).
-		SetDAGRequest(&tipb.DAGRequest{}).
+		SetDAGRequest(&tipb.DAGRequest{}, &tipb.DAGRequestNonCacheablePartial{}).
 		SetDesc(false).
 		SetKeepOrder(false).
 		SetFromSessionVars(variable.NewSessionVars()).
 		Build()
 	c.Assert(err, IsNil)
 	expect := &kv.Request{
-		Tp:      103,
-		StartTs: 0x0,
-		Data:    []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
+		Tp:               103,
+		StartTs:          0x0,
+		Data:             []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
+		NonCacheableData: []uint8{},
 		KeyRanges: []kv.KeyRange{
 			{
 				StartKey: kv.Key{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc, 0x5f, 0x69, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf, 0x3, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1},
@@ -404,16 +406,17 @@ func (s *testSuite) TestRequestBuilder3(c *C) {
 	handles := []int64{0, 2, 3, 4, 5, 10, 11, 100}
 
 	actual, err := (&RequestBuilder{}).SetTableHandles(15, handles).
-		SetDAGRequest(&tipb.DAGRequest{}).
+		SetDAGRequest(&tipb.DAGRequest{}, &tipb.DAGRequestNonCacheablePartial{}).
 		SetDesc(false).
 		SetKeepOrder(false).
 		SetFromSessionVars(variable.NewSessionVars()).
 		Build()
 	c.Assert(err, IsNil)
 	expect := &kv.Request{
-		Tp:      103,
-		StartTs: 0x0,
-		Data:    []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
+		Tp:               103,
+		StartTs:          0x0,
+		Data:             []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
+		NonCacheableData: []uint8{},
 		KeyRanges: []kv.KeyRange{
 			{
 				StartKey: kv.Key{0x74, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xf, 0x5f, 0x72, 0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
@@ -467,7 +470,7 @@ func (s *testSuite) TestRequestBuilder4(c *C) {
 	}
 
 	actual, err := (&RequestBuilder{}).SetKeyRanges(keyRanges).
-		SetDAGRequest(&tipb.DAGRequest{}).
+		SetDAGRequest(&tipb.DAGRequest{}, &tipb.DAGRequestNonCacheablePartial{}).
 		SetDesc(false).
 		SetKeepOrder(false).
 		SetStreaming(true).
@@ -475,20 +478,21 @@ func (s *testSuite) TestRequestBuilder4(c *C) {
 		Build()
 	c.Assert(err, IsNil)
 	expect := &kv.Request{
-		Tp:             103,
-		StartTs:        0x0,
-		Data:           []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
-		KeyRanges:      keyRanges,
-		Cacheable:      true,
-		KeepOrder:      false,
-		Desc:           false,
-		Concurrency:    15,
-		IsolationLevel: 0,
-		Priority:       0,
-		Streaming:      true,
-		NotFillCache:   false,
-		SyncLog:        false,
-		ReplicaRead:    kv.ReplicaReadLeader,
+		Tp:               103,
+		StartTs:          0x0,
+		Data:             []uint8{0x18, 0x0, 0x20, 0x0, 0x40, 0x0, 0x5a, 0x0},
+		NonCacheableData: []uint8{},
+		KeyRanges:        keyRanges,
+		Cacheable:        true,
+		KeepOrder:        false,
+		Desc:             false,
+		Concurrency:      15,
+		IsolationLevel:   0,
+		Priority:         0,
+		Streaming:        true,
+		NotFillCache:     false,
+		SyncLog:          false,
+		ReplicaRead:      kv.ReplicaReadLeader,
 	}
 	c.Assert(actual, DeepEquals, expect)
 }

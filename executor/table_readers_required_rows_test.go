@@ -113,18 +113,20 @@ func mockSelectResult(ctx context.Context, sctx sessionctx.Context, kvReq *kv.Re
 }
 
 func buildTableReader(sctx sessionctx.Context) Executor {
+	dagPB, dagPBNonCacheable := buildMockDAGRequest(sctx)
 	e := &TableReaderExecutor{
-		baseExecutor:     buildMockBaseExec(sctx),
-		table:            &tables.TableCommon{},
-		dagPB:            buildMockDAGRequest(sctx),
-		selectResultHook: selectResultHook{mockSelectResult},
+		baseExecutor:      buildMockBaseExec(sctx),
+		table:             &tables.TableCommon{},
+		dagPB:             dagPB,
+		dagPBNonCacheable: dagPBNonCacheable,
+		selectResultHook:  selectResultHook{mockSelectResult},
 	}
 	return e
 }
 
-func buildMockDAGRequest(sctx sessionctx.Context) *tipb.DAGRequest {
+func buildMockDAGRequest(sctx sessionctx.Context) (*tipb.DAGRequest, *tipb.DAGRequestNonCacheablePartial) {
 	builder := newExecutorBuilder(sctx, nil)
-	req, _, err := builder.constructDAGReq([]core.PhysicalPlan{&core.PhysicalTableScan{
+	req, reqNonCacheable, _, err := builder.constructDAGReq([]core.PhysicalPlan{&core.PhysicalTableScan{
 		Columns: []*model.ColumnInfo{},
 		Table:   &model.TableInfo{ID: 12345, PKIsHandle: false},
 		Desc:    false,
@@ -132,7 +134,7 @@ func buildMockDAGRequest(sctx sessionctx.Context) *tipb.DAGRequest {
 	if err != nil {
 		panic(err)
 	}
-	return req
+	return req, reqNonCacheable
 }
 
 func buildMockBaseExec(sctx sessionctx.Context) baseExecutor {
@@ -189,11 +191,13 @@ func (s *testExecSuite) TestTableReaderRequiredRows(c *C) {
 }
 
 func buildIndexReader(sctx sessionctx.Context) Executor {
+	dagPB, dagPBNonCacheable := buildMockDAGRequest(sctx)
 	e := &IndexReaderExecutor{
-		baseExecutor:     buildMockBaseExec(sctx),
-		dagPB:            buildMockDAGRequest(sctx),
-		index:            &model.IndexInfo{},
-		selectResultHook: selectResultHook{mockSelectResult},
+		baseExecutor:      buildMockBaseExec(sctx),
+		dagPB:             dagPB,
+		dagPBNonCacheable: dagPBNonCacheable,
+		index:             &model.IndexInfo{},
+		selectResultHook:  selectResultHook{mockSelectResult},
 	}
 	return e
 }

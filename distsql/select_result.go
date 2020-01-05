@@ -59,10 +59,11 @@ type selectResult struct {
 	fieldTypes []*types.FieldType
 	ctx        sessionctx.Context
 
-	selectResp       *tipb.SelectResponse
-	selectRespSize   int // record the selectResp.Size() when it is initialized.
-	respChkIdx       int
-	respChunkDecoder *chunk.Decoder
+	selectResp             *tipb.SelectResponse
+	selectRespNonCacheable *tipb.DAGResponseNonCacheablePartial
+	selectRespSize         int // record the selectResp.Size() when it is initialized.
+	respChkIdx             int
+	respChunkDecoder       *chunk.Decoder
 
 	feedback     *statistics.QueryFeedback
 	partialCount int64 // number of partial results.
@@ -113,6 +114,16 @@ func (r *selectResult) fetchResp(ctx context.Context) error {
 		}
 		r.selectRespSize = r.selectResp.Size()
 		r.memConsume(int64(r.selectRespSize))
+
+		r.selectRespNonCacheable = new(tipb.DAGResponseNonCacheablePartial)
+		nonCacheableData := resultSubset.GetNonCacheableData()
+		if len(nonCacheableData) > 0 {
+			err = r.selectResp.Unmarshal(nonCacheableData)
+			if err != nil {
+				return errors.Trace(err)
+			}
+		}
+
 		if err := r.selectResp.Error; err != nil {
 			return terror.ClassTiKV.New(terror.ErrCode(err.Code), err.Msg)
 		}
@@ -224,16 +235,16 @@ func (r *selectResult) updateCopRuntimeStats(detail *execdetails.ExecDetails, re
 	if r.ctx.GetSessionVars().StmtCtx.RuntimeStatsColl == nil || callee == "" {
 		return
 	}
-	if len(r.selectResp.GetExecutionSummaries()) != len(r.copPlanIDs) {
+	if len(r.selectRespNonCacheable.GetExecutionSummaries()) != len(r.copPlanIDs) {
 		logutil.BgLogger().Error("invalid cop task execution summaries length",
 			zap.Int("expected", len(r.copPlanIDs)),
-			zap.Int("received", len(r.selectResp.GetExecutionSummaries())))
+			zap.Int("received", len(r.selectRespNonCacheable.GetExecutionSummaries())))
 
 		return
 	}
 
 	r.ctx.GetSessionVars().StmtCtx.RuntimeStatsColl.RecordOneReaderStats(r.rootPlanID.String(), respTime, detail)
-	for i, detail := range r.selectResp.GetExecutionSummaries() {
+	for i, detail := range r.selectRespNonCacheable.GetExecutionSummaries() {
 		if detail != nil && detail.TimeProcessedNs != nil &&
 			detail.NumProducedRows != nil && detail.NumIterations != nil {
 			planID := r.copPlanIDs[i]

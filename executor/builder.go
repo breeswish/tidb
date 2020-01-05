@@ -1802,15 +1802,16 @@ func constructDistExec(sctx sessionctx.Context, plans []plannercore.PhysicalPlan
 	return executors, streaming, nil
 }
 
-func (b *executorBuilder) constructDAGReq(plans []plannercore.PhysicalPlan) (dagReq *tipb.DAGRequest, streaming bool, err error) {
+func (b *executorBuilder) constructDAGReq(plans []plannercore.PhysicalPlan) (dagReq *tipb.DAGRequest, dagReqNonCacheable *tipb.DAGRequestNonCacheablePartial, streaming bool, err error) {
 	dagReq = &tipb.DAGRequest{}
+	dagReqNonCacheable = &tipb.DAGRequestNonCacheablePartial{}
 	dagReq.TimeZoneName, dagReq.TimeZoneOffset = timeutil.Zone(b.ctx.GetSessionVars().Location())
 	sc := b.ctx.GetSessionVars().StmtCtx
 	dagReq.Flags = sc.PushDownFlags()
 	dagReq.Executors, streaming, err = constructDistExec(b.ctx, plans)
 
 	distsql.SetEncodeType(b.ctx, dagReq)
-	return dagReq, streaming, err
+	return dagReq, dagReqNonCacheable, streaming, err
 }
 
 func (b *executorBuilder) corColInDistPlan(plans []plannercore.PhysicalPlan) bool {
@@ -2026,7 +2027,7 @@ func containsLimit(execs []*tipb.Executor) bool {
 }
 
 func buildNoRangeTableReader(b *executorBuilder, v *plannercore.PhysicalTableReader) (*TableReaderExecutor, error) {
-	dagReq, streaming, err := b.constructDAGReq(v.TablePlans)
+	dagReq, dagReqNonCacheable, streaming, err := b.constructDAGReq(v.TablePlans)
 	if err != nil {
 		return nil, err
 	}
@@ -2042,18 +2043,19 @@ func buildNoRangeTableReader(b *executorBuilder, v *plannercore.PhysicalTableRea
 		return nil, err
 	}
 	e := &TableReaderExecutor{
-		baseExecutor:   newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
-		dagPB:          dagReq,
-		startTS:        startTS,
-		table:          tbl,
-		keepOrder:      ts.KeepOrder,
-		desc:           ts.Desc,
-		columns:        ts.Columns,
-		streaming:      streaming,
-		corColInFilter: b.corColInDistPlan(v.TablePlans),
-		corColInAccess: b.corColInAccess(v.TablePlans[0]),
-		plans:          v.TablePlans,
-		storeType:      v.StoreType,
+		baseExecutor:      newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		dagPB:             dagReq,
+		dagPBNonCacheable: dagReqNonCacheable,
+		startTS:           startTS,
+		table:             tbl,
+		keepOrder:         ts.KeepOrder,
+		desc:              ts.Desc,
+		columns:           ts.Columns,
+		streaming:         streaming,
+		corColInFilter:    b.corColInDistPlan(v.TablePlans),
+		corColInAccess:    b.corColInAccess(v.TablePlans[0]),
+		plans:             v.TablePlans,
+		storeType:         v.StoreType,
 	}
 	e.buildVirtualColumnInfo()
 	if containsLimit(dagReq.Executors) {
@@ -2097,7 +2099,7 @@ func (b *executorBuilder) buildTableReader(v *plannercore.PhysicalTableReader) *
 }
 
 func buildNoRangeIndexReader(b *executorBuilder, v *plannercore.PhysicalIndexReader) (*IndexReaderExecutor, error) {
-	dagReq, streaming, err := b.constructDAGReq(v.IndexPlans)
+	dagReq, dagReqNonCacheable, streaming, err := b.constructDAGReq(v.IndexPlans)
 	if err != nil {
 		return nil, err
 	}
@@ -2115,22 +2117,23 @@ func buildNoRangeIndexReader(b *executorBuilder, v *plannercore.PhysicalIndexRea
 		return nil, err
 	}
 	e := &IndexReaderExecutor{
-		baseExecutor:    newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
-		dagPB:           dagReq,
-		startTS:         startTS,
-		physicalTableID: physicalTableID,
-		table:           tbl,
-		index:           is.Index,
-		keepOrder:       is.KeepOrder,
-		desc:            is.Desc,
-		columns:         is.Columns,
-		streaming:       streaming,
-		corColInFilter:  b.corColInDistPlan(v.IndexPlans),
-		corColInAccess:  b.corColInAccess(v.IndexPlans[0]),
-		idxCols:         is.IdxCols,
-		colLens:         is.IdxColLens,
-		plans:           v.IndexPlans,
-		outputColumns:   v.OutputColumns,
+		baseExecutor:      newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		dagPB:             dagReq,
+		dagPBNonCacheable: dagReqNonCacheable,
+		startTS:           startTS,
+		physicalTableID:   physicalTableID,
+		table:             tbl,
+		index:             is.Index,
+		keepOrder:         is.KeepOrder,
+		desc:              is.Desc,
+		columns:           is.Columns,
+		streaming:         streaming,
+		corColInFilter:    b.corColInDistPlan(v.IndexPlans),
+		corColInAccess:    b.corColInAccess(v.IndexPlans[0]),
+		idxCols:           is.IdxCols,
+		colLens:           is.IdxColLens,
+		plans:             v.IndexPlans,
+		outputColumns:     v.OutputColumns,
 	}
 	if containsLimit(dagReq.Executors) {
 		e.feedback = statistics.NewQueryFeedback(0, nil, 0, is.Desc)
@@ -2170,35 +2173,35 @@ func (b *executorBuilder) buildIndexReader(v *plannercore.PhysicalIndexReader) *
 	return ret
 }
 
-func buildTableReq(b *executorBuilder, schemaLen int, plans []plannercore.PhysicalPlan) (dagReq *tipb.DAGRequest, streaming bool, val table.Table, err error) {
-	tableReq, tableStreaming, err := b.constructDAGReq(plans)
+func buildTableReq(b *executorBuilder, schemaLen int, plans []plannercore.PhysicalPlan) (dagReq *tipb.DAGRequest, dagReqNonCacheable *tipb.DAGRequestNonCacheablePartial, streaming bool, val table.Table, err error) {
+	tableReq, tableReqNonCacheable, tableStreaming, err := b.constructDAGReq(plans)
 	if err != nil {
-		return nil, false, nil, err
+		return nil, nil, false, nil, err
 	}
 	for i := 0; i < schemaLen; i++ {
 		tableReq.OutputOffsets = append(tableReq.OutputOffsets, uint32(i))
 	}
 	ts := plans[0].(*plannercore.PhysicalTableScan)
 	tbl, _ := b.is.TableByID(ts.Table.ID)
-	return tableReq, tableStreaming, tbl, err
+	return tableReq, tableReqNonCacheable, tableStreaming, tbl, err
 }
 
-func buildIndexReq(b *executorBuilder, schemaLen int, plans []plannercore.PhysicalPlan) (dagReq *tipb.DAGRequest, streaming bool, err error) {
-	indexReq, indexStreaming, err := b.constructDAGReq(plans)
+func buildIndexReq(b *executorBuilder, schemaLen int, plans []plannercore.PhysicalPlan) (dagReq *tipb.DAGRequest, dagReqNonCacheable *tipb.DAGRequestNonCacheablePartial, streaming bool, err error) {
+	indexReq, indexReqNonCacheable, indexStreaming, err := b.constructDAGReq(plans)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	indexReq.OutputOffsets = []uint32{uint32(schemaLen)}
-	return indexReq, indexStreaming, err
+	return indexReq, indexReqNonCacheable, indexStreaming, err
 }
 
 func buildNoRangeIndexLookUpReader(b *executorBuilder, v *plannercore.PhysicalIndexLookUpReader) (*IndexLookUpExecutor, error) {
 	is := v.IndexPlans[0].(*plannercore.PhysicalIndexScan)
-	indexReq, indexStreaming, err := buildIndexReq(b, len(is.Index.Columns), v.IndexPlans)
+	indexReq, indexReqNonCacheable, indexStreaming, err := buildIndexReq(b, len(is.Index.Columns), v.IndexPlans)
 	if err != nil {
 		return nil, err
 	}
-	tableReq, tableStreaming, tbl, err := buildTableReq(b, v.Schema().Len(), v.TablePlans)
+	tableReq, tableReqNonCacheable, tableStreaming, tbl, err := buildTableReq(b, v.Schema().Len(), v.TablePlans)
 	if err != nil {
 		return nil, err
 	}
@@ -2212,26 +2215,28 @@ func buildNoRangeIndexLookUpReader(b *executorBuilder, v *plannercore.PhysicalIn
 		return nil, err
 	}
 	e := &IndexLookUpExecutor{
-		baseExecutor:      newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
-		dagPB:             indexReq,
-		startTS:           startTS,
-		table:             tbl,
-		index:             is.Index,
-		keepOrder:         is.KeepOrder,
-		desc:              is.Desc,
-		tableRequest:      tableReq,
-		columns:           ts.Columns,
-		indexStreaming:    indexStreaming,
-		tableStreaming:    tableStreaming,
-		dataReaderBuilder: &dataReaderBuilder{executorBuilder: b},
-		corColInIdxSide:   b.corColInDistPlan(v.IndexPlans),
-		corColInTblSide:   b.corColInDistPlan(v.TablePlans),
-		corColInAccess:    b.corColInAccess(v.IndexPlans[0]),
-		idxCols:           is.IdxCols,
-		colLens:           is.IdxColLens,
-		idxPlans:          v.IndexPlans,
-		tblPlans:          v.TablePlans,
-		PushedLimit:       v.PushedLimit,
+		baseExecutor:             newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		dagPB:                    indexReq,
+		dagPBNonCacheable:        indexReqNonCacheable,
+		startTS:                  startTS,
+		table:                    tbl,
+		index:                    is.Index,
+		keepOrder:                is.KeepOrder,
+		desc:                     is.Desc,
+		tableRequest:             tableReq,
+		tableRequestNonCacheable: tableReqNonCacheable,
+		columns:                  ts.Columns,
+		indexStreaming:           indexStreaming,
+		tableStreaming:           tableStreaming,
+		dataReaderBuilder:        &dataReaderBuilder{executorBuilder: b},
+		corColInIdxSide:          b.corColInDistPlan(v.IndexPlans),
+		corColInTblSide:          b.corColInDistPlan(v.TablePlans),
+		corColInAccess:           b.corColInAccess(v.IndexPlans[0]),
+		idxCols:                  is.IdxCols,
+		colLens:                  is.IdxColLens,
+		idxPlans:                 v.IndexPlans,
+		tblPlans:                 v.TablePlans,
+		PushedLimit:              v.PushedLimit,
 	}
 
 	if containsLimit(indexReq.Executors) {
@@ -2280,6 +2285,7 @@ func (b *executorBuilder) buildIndexLookUpReader(v *plannercore.PhysicalIndexLoo
 func buildNoRangeIndexMergeReader(b *executorBuilder, v *plannercore.PhysicalIndexMergeReader) (*IndexMergeReaderExecutor, error) {
 	partialPlanCount := len(v.PartialPlans)
 	partialReqs := make([]*tipb.DAGRequest, 0, partialPlanCount)
+	partialNonCacheableReqs := make([]*tipb.DAGRequestNonCacheablePartial, 0, partialPlanCount)
 	partialStreamings := make([]bool, 0, partialPlanCount)
 	indexes := make([]*model.IndexInfo, 0, partialPlanCount)
 	keepOrders := make([]bool, 0, partialPlanCount)
@@ -2288,6 +2294,7 @@ func buildNoRangeIndexMergeReader(b *executorBuilder, v *plannercore.PhysicalInd
 	ts := v.TablePlans[0].(*plannercore.PhysicalTableScan)
 	for i := 0; i < partialPlanCount; i++ {
 		var tempReq *tipb.DAGRequest
+		var tempReqNonCacheable *tipb.DAGRequestNonCacheablePartial
 		var tempStreaming bool
 		var err error
 
@@ -2296,13 +2303,13 @@ func buildNoRangeIndexMergeReader(b *executorBuilder, v *plannercore.PhysicalInd
 		feedbacks = append(feedbacks, feedback)
 
 		if is, ok := v.PartialPlans[i][0].(*plannercore.PhysicalIndexScan); ok {
-			tempReq, tempStreaming, err = buildIndexReq(b, len(is.Index.Columns), v.PartialPlans[i])
+			tempReq, tempReqNonCacheable, tempStreaming, err = buildIndexReq(b, len(is.Index.Columns), v.PartialPlans[i])
 			keepOrders = append(keepOrders, is.KeepOrder)
 			descs = append(descs, is.Desc)
 			indexes = append(indexes, is.Index)
 		} else {
 			ts := v.PartialPlans[i][0].(*plannercore.PhysicalTableScan)
-			tempReq, tempStreaming, _, err = buildTableReq(b, len(ts.Columns), v.PartialPlans[i])
+			tempReq, tempReqNonCacheable, tempStreaming, _, err = buildTableReq(b, len(ts.Columns), v.PartialPlans[i])
 			keepOrders = append(keepOrders, ts.KeepOrder)
 			descs = append(descs, ts.Desc)
 			indexes = append(indexes, nil)
@@ -2313,9 +2320,10 @@ func buildNoRangeIndexMergeReader(b *executorBuilder, v *plannercore.PhysicalInd
 		collect := false
 		tempReq.CollectRangeCounts = &collect
 		partialReqs = append(partialReqs, tempReq)
+		partialNonCacheableReqs = append(partialNonCacheableReqs, tempReqNonCacheable)
 		partialStreamings = append(partialStreamings, tempStreaming)
 	}
-	tableReq, tableStreaming, table, err := buildTableReq(b, v.Schema().Len(), v.TablePlans)
+	tableReq, tableReqNonCacheable, tableStreaming, table, err := buildTableReq(b, v.Schema().Len(), v.TablePlans)
 	if err != nil {
 		return nil, err
 	}
@@ -2324,21 +2332,23 @@ func buildNoRangeIndexMergeReader(b *executorBuilder, v *plannercore.PhysicalInd
 		return nil, err
 	}
 	e := &IndexMergeReaderExecutor{
-		baseExecutor:      newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
-		dagPBs:            partialReqs,
-		startTS:           startTS,
-		table:             table,
-		indexes:           indexes,
-		keepOrders:        keepOrders,
-		descs:             descs,
-		tableRequest:      tableReq,
-		columns:           ts.Columns,
-		partialStreamings: partialStreamings,
-		tableStreaming:    tableStreaming,
-		partialPlans:      v.PartialPlans,
-		tblPlans:          v.TablePlans,
-		dataReaderBuilder: &dataReaderBuilder{executorBuilder: b},
-		feedbacks:         feedbacks,
+		baseExecutor:             newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		dagPBs:                   partialReqs,
+		dagPBsNonCacheable:       partialNonCacheableReqs,
+		startTS:                  startTS,
+		table:                    table,
+		indexes:                  indexes,
+		keepOrders:               keepOrders,
+		descs:                    descs,
+		tableRequest:             tableReq,
+		tableRequestNonCacheable: tableReqNonCacheable,
+		columns:                  ts.Columns,
+		partialStreamings:        partialStreamings,
+		tableStreaming:           tableStreaming,
+		partialPlans:             v.PartialPlans,
+		tblPlans:                 v.TablePlans,
+		dataReaderBuilder:        &dataReaderBuilder{executorBuilder: b},
+		feedbacks:                feedbacks,
 	}
 	collectTable := false
 	e.tableRequest.CollectRangeCounts = &collectTable
@@ -2435,9 +2445,9 @@ func (builder *dataReaderBuilder) buildTableReaderForIndexJoin(ctx context.Conte
 }
 
 func (builder *dataReaderBuilder) buildTableReaderFromHandles(ctx context.Context, e *TableReaderExecutor, handles []int64) (Executor, error) {
-	if e.runtimeStats != nil && e.dagPB.CollectExecutionSummaries == nil {
+	if e.runtimeStats != nil && e.dagPBNonCacheable.CollectExecutionSummaries == nil {
 		colExec := true
-		e.dagPB.CollectExecutionSummaries = &colExec
+		e.dagPBNonCacheable.CollectExecutionSummaries = &colExec
 	}
 	startTS, err := builder.getStartTS()
 	if err != nil {
@@ -2447,7 +2457,7 @@ func (builder *dataReaderBuilder) buildTableReaderFromHandles(ctx context.Contex
 	sort.Sort(sortutil.Int64Slice(handles))
 	var b distsql.RequestBuilder
 	kvReq, err := b.SetTableHandles(getPhysicalTableID(e.table), handles).
-		SetDAGRequest(e.dagPB).
+		SetDAGRequest(e.dagPB, e.dagPBNonCacheable).
 		SetStartTS(startTS).
 		SetDesc(e.desc).
 		SetKeepOrder(e.keepOrder).

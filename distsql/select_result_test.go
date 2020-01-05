@@ -33,18 +33,18 @@ func (s *testSuite) TestUpdateCopRuntimeStats(c *C) {
 
 	ctx.GetSessionVars().StmtCtx.RuntimeStatsColl = execdetails.NewRuntimeStatsColl()
 	t := uint64(1)
-	sr.selectResp = &tipb.SelectResponse{
+	sr.selectRespNonCacheable = &tipb.DAGResponseNonCacheablePartial{
 		ExecutionSummaries: []*tipb.ExecutorExecutionSummary{
 			{TimeProcessedNs: &t, NumProducedRows: &t, NumIterations: &t},
 		},
 	}
-	c.Assert(len(sr.selectResp.GetExecutionSummaries()) != len(sr.copPlanIDs), IsTrue)
+	c.Assert(len(sr.selectRespNonCacheable.GetExecutionSummaries()) != len(sr.copPlanIDs), IsTrue)
 	sr.updateCopRuntimeStats(&execdetails.ExecDetails{CalleeAddress: "callee"}, 0)
 	c.Assert(ctx.GetSessionVars().StmtCtx.RuntimeStatsColl.ExistsCopStats("callee"), IsFalse)
 
 	sr.copPlanIDs = []fmt.Stringer{copPlan{}}
 	c.Assert(ctx.GetSessionVars().StmtCtx.RuntimeStatsColl, NotNil)
-	c.Assert(len(sr.selectResp.GetExecutionSummaries()), Equals, len(sr.copPlanIDs))
+	c.Assert(len(sr.selectRespNonCacheable.GetExecutionSummaries()), Equals, len(sr.copPlanIDs))
 	sr.updateCopRuntimeStats(&execdetails.ExecDetails{CalleeAddress: "callee"}, 0)
 	c.Assert(ctx.GetSessionVars().StmtCtx.RuntimeStatsColl.GetCopStats("callee").String(), Equals, "time:1ns, loops:1, rows:1")
 }

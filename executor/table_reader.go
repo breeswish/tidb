@@ -59,9 +59,10 @@ type TableReaderExecutor struct {
 	table  table.Table
 	ranges []*ranger.Range
 	// kvRanges are only use for union scan.
-	kvRanges []kv.KeyRange
-	dagPB    *tipb.DAGRequest
-	startTS  uint64
+	kvRanges          []kv.KeyRange
+	dagPB             *tipb.DAGRequest
+	dagPBNonCacheable *tipb.DAGRequestNonCacheablePartial
+	startTS           uint64
 	// columns are only required by union scan and virtual column.
 	columns []*model.ColumnInfo
 
@@ -109,7 +110,7 @@ func (e *TableReaderExecutor) Open(ctx context.Context) error {
 	}
 	if e.runtimeStats != nil {
 		collExec := true
-		e.dagPB.CollectExecutionSummaries = &collExec
+		e.dagPBNonCacheable.CollectExecutionSummaries = &collExec
 	}
 	if e.corColInAccess {
 		ts := e.plans[0].(*plannercore.PhysicalTableScan)
@@ -207,7 +208,7 @@ func (e *TableReaderExecutor) Close() error {
 func (e *TableReaderExecutor) buildResp(ctx context.Context, ranges []*ranger.Range) (distsql.SelectResult, error) {
 	var builder distsql.RequestBuilder
 	kvReq, err := builder.SetTableRanges(getPhysicalTableID(e.table), ranges, e.feedback).
-		SetDAGRequest(e.dagPB).
+		SetDAGRequest(e.dagPB, e.dagPBNonCacheable).
 		SetStartTS(e.startTS).
 		SetDesc(e.desc).
 		SetKeepOrder(e.keepOrder).
