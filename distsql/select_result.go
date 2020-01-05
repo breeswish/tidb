@@ -118,7 +118,7 @@ func (r *selectResult) fetchResp(ctx context.Context) error {
 		r.selectRespNonCacheable = new(tipb.DAGResponseNonCacheablePartial)
 		nonCacheableData := resultSubset.GetNonCacheableData()
 		if len(nonCacheableData) > 0 {
-			err = r.selectResp.Unmarshal(nonCacheableData)
+			err = r.selectRespNonCacheable.Unmarshal(nonCacheableData)
 			if err != nil {
 				return errors.Trace(err)
 			}
